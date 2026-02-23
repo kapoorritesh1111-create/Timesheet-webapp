@@ -1,63 +1,79 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useEffect, useMemo } from "react";
+import React, { ReactNode, useEffect, useMemo } from "react";
 import { useProfile } from "../../lib/useProfile";
 import TopNav from "./TopNav";
 
-type UiPrefsAny = {
-  accent?: string;
-  density?: string;
-  radius?: string;
-};
-
-export default function AppShell({
-  title,
-  subtitle,
-  right,
-  children,
-}: {
+type Props = {
   title?: string;
   subtitle?: string;
   right?: ReactNode;
   children: ReactNode;
-}) {
-  const { profile } = useProfile() as any;
-  const prefs: UiPrefsAny = (profile?.ui_prefs && typeof profile.ui_prefs === "object" ? profile.ui_prefs : {}) as UiPrefsAny;
+};
 
-  const applied = useMemo(() => {
-    const safe = {
-      accent: typeof prefs.accent === "string" ? prefs.accent : "",
-      density: typeof prefs.density === "string" ? prefs.density : "",
-      radius: typeof prefs.radius === "string" ? prefs.radius : "",
-    };
-    return safe;
-  }, [prefs.accent, prefs.density, prefs.radius]);
+type Accent = "blue" | "indigo" | "emerald" | "rose" | "slate";
+type Density = "comfortable" | "compact";
+type Radius = "md" | "lg" | "xl";
 
-  // ✅ Apply user prefs globally (every page)
+type UiPrefs = {
+  accent: Accent;
+  density: Density;
+  radius: Radius;
+};
+
+const DEFAULT_PREFS: UiPrefs = {
+  accent: "blue",
+  density: "comfortable",
+  radius: "lg",
+};
+
+function safePrefs(raw: any): UiPrefs {
+  const p = raw?.ui_prefs;
+  const base = { ...DEFAULT_PREFS };
+
+  if (!p || typeof p !== "object") return base;
+
+  const a = p.accent as Accent;
+  const d = p.density as Density;
+  const r = p.radius as Radius;
+
+  if (a === "blue" || a === "indigo" || a === "emerald" || a === "rose" || a === "slate") base.accent = a;
+  if (d === "comfortable" || d === "compact") base.density = d;
+  if (r === "md" || r === "lg" || r === "xl") base.radius = r;
+
+  return base;
+}
+
+function applyPrefs(p: UiPrefs) {
+  document.documentElement.dataset.accent = p.accent;
+  document.documentElement.dataset.density = p.density;
+  document.documentElement.dataset.radius = p.radius;
+}
+
+export default function AppShell({ title, subtitle, right, children }: Props) {
+  const { profile } = useProfile();
+
+  const prefsFromProfile = useMemo(() => safePrefs(profile), [profile?.id, (profile as any)?.ui_prefs]);
+
+  // 1) Apply localStorage immediately (fast paint after refresh)
   useEffect(() => {
-    const root = document.documentElement;
+    try {
+      const raw = localStorage.getItem("ts_theme_prefs");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      applyPrefs(safePrefs({ ui_prefs: parsed }));
+    } catch {}
+  }, []);
 
-    // If profile prefs exist, prefer them.
-    if (applied.accent) root.dataset.accent = applied.accent;
-    if (applied.density) root.dataset.density = applied.density;
-    if (applied.radius) root.dataset.radius = applied.radius;
+  // 2) Then apply DB prefs once profile is available
+  useEffect(() => {
+    applyPrefs(prefsFromProfile);
 
-    // If profile is not loaded / has no prefs, fall back to localStorage draft (optional)
-    if (!applied.accent || !applied.density || !applied.radius) {
-      try {
-        const raw = localStorage.getItem("ts_theme_prefs");
-        if (raw) {
-          const v = JSON.parse(raw);
-          if (!applied.accent && typeof v.accent === "string") root.dataset.accent = v.accent;
-          if (!applied.density && typeof v.density === "string") root.dataset.density = v.density;
-          if (!applied.radius && typeof v.radius === "string") root.dataset.radius = v.radius;
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }, [applied.accent, applied.density, applied.radius]);
+    // keep localStorage in sync (helps when profile loads later)
+    try {
+      localStorage.setItem("ts_theme_prefs", JSON.stringify(prefsFromProfile));
+    } catch {}
+  }, [prefsFromProfile.accent, prefsFromProfile.density, prefsFromProfile.radius]);
 
   return (
     <div className="appShell">
@@ -66,13 +82,12 @@ export default function AppShell({
         {(title || subtitle || right) && (
           <div className="pageHeader">
             <div>
-              {title ? <h1 className="pageTitle">{title}</h1> : null}
-              {subtitle ? <div className="pageSubtitle">{subtitle}</div> : null}
+              {title && <h1 className="pageTitle">{title}</h1>}
+              {subtitle && <div className="pageSubtitle">{subtitle}</div>}
             </div>
-            {right ? <div>{right}</div> : null}
+            {right ? <div className="tsHeaderRight">{right}</div> : null}
           </div>
         )}
-
         {children}
       </div>
     </div>
