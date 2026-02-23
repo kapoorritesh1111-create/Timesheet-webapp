@@ -10,7 +10,7 @@ import { useProfile } from "../../lib/useProfile";
 
 type Role = "admin" | "manager" | "contractor";
 type ActiveFilter = "all" | "active" | "inactive";
-type ScopeFilter = "visible" | "all_org"; // visible = applies role scoping; all_org = admin only
+type ScopeFilter = "visible" | "all_org";
 
 type ProfileRow = {
   id: string;
@@ -37,12 +37,16 @@ function roleLabel(r: Role) {
   return "Contractor";
 }
 
-function activeLabel(v: boolean | null) {
-  return v === false ? "Inactive" : "Active";
-}
-
 function safeName(r: ProfileRow) {
   return (r.full_name || "").trim() || "(no name)";
+}
+
+function copyToClipboard(text: string) {
+  try {
+    navigator.clipboard.writeText(text);
+  } catch {
+    // ignore
+  }
 }
 
 function ProfilesInner() {
@@ -65,16 +69,11 @@ function ProfilesInner() {
   const visibleRows = useMemo(() => {
     if (!profile || !userId) return [];
     if (isAdmin) {
-      // admin can optionally view visible scope (same as others) or all org
       if (scope === "all_org") return rows;
-      // visible scope for admin = all org anyway, but keep option in case you later add admin scoping
       return rows;
     }
 
-    // Manager sees self + direct reports
     if (isManager) return rows.filter((r) => r.id === userId || r.manager_id === userId);
-
-    // Contractor sees self only
     return rows.filter((r) => r.id === userId);
   }, [rows, profile, userId, isAdmin, isManager, scope]);
 
@@ -103,19 +102,12 @@ function ProfilesInner() {
     let total = visibleRows.length;
     let active = 0;
     let inactive = 0;
-    let admins = 0;
-    let managersC = 0;
-    let contractors = 0;
 
     for (const r of visibleRows) {
       if (r.is_active === false) inactive++;
       else active++;
-
-      if (r.role === "admin") admins++;
-      else if (r.role === "manager") managersC++;
-      else contractors++;
     }
-    return { total, active, inactive, admins, managers: managersC, contractors, showing: filtered.length };
+    return { total, active, inactive, showing: filtered.length };
   }, [visibleRows, filtered.length]);
 
   useEffect(() => {
@@ -191,11 +183,26 @@ function ProfilesInner() {
 
   const headerRight = (
     <div className="prfHeaderRight">
-      <button className="pill" onClick={() => router.push("/dashboard")}>Dashboard</button>
-      <button className="pill" onClick={() => router.push("/projects")}>Projects</button>
-      <button className="pill" onClick={() => router.push("/timesheet")}>Timesheet</button>
+      <button className="pill" onClick={() => router.push("/settings")}>
+        Settings
+      </button>
+      <button className="pill" onClick={() => router.push("/settings/profile")}>
+        Edit my profile
+      </button>
+
+      <button className="pill" onClick={() => router.push("/dashboard")}>
+        Dashboard
+      </button>
+      <button className="pill" onClick={() => router.push("/projects")}>
+        Projects
+      </button>
+      <button className="pill" onClick={() => router.push("/timesheet")}>
+        Timesheet
+      </button>
       {isAdmin ? (
-        <button className="pill" onClick={() => router.push("/admin")}>Admin</button>
+        <button className="pill" onClick={() => router.push("/admin")}>
+          Admin
+        </button>
       ) : null}
     </div>
   );
@@ -246,7 +253,14 @@ function ProfilesInner() {
             ) : null}
 
             <div className="prfClear">
-              <button className="pill" onClick={() => { setQ(""); setRoleFilter("all"); setActiveFilter("all"); }}>
+              <button
+                className="pill"
+                onClick={() => {
+                  setQ("");
+                  setRoleFilter("all");
+                  setActiveFilter("all");
+                }}
+              >
                 Clear
               </button>
             </div>
@@ -272,9 +286,7 @@ function ProfilesInner() {
         <div className="prfHeader">
           <div>
             <div className="prfTitle">Profiles</div>
-            <div className="muted prfSub">
-              Edit name, role, manager, hourly rate and status based on permissions.
-            </div>
+            <div className="muted prfSub">Edit name, role, manager, hourly rate and status based on permissions.</div>
           </div>
           {tag(String(filtered.length))}
         </div>
@@ -289,17 +301,9 @@ function ProfilesInner() {
               const isSelf = r.id === userId;
               const isDirectReport = r.manager_id === userId;
 
-              const canEditRow =
-                isAdmin ||
-                (isManager && (isSelf || isDirectReport)) ||
-                isSelf; // contractor self (name only; rate handled below)
-
+              const canEditRow = isAdmin || (isManager && (isSelf || isDirectReport)) || isSelf;
               const canAssignManager = isAdmin && r.role === "contractor";
               const canChangeRole = isAdmin && r.role !== "admin";
-
-              // Hourly rate rules:
-              // - Admin can edit anyone (including themselves)
-              // - Manager can edit direct reports
               const canEditHourlyRate = isAdmin || (isManager && isDirectReport);
 
               const saving = busyId === r.id;
@@ -326,10 +330,9 @@ function ProfilesInner() {
                       <button
                         className="pill"
                         onClick={() => router.push(`/projects?user=${encodeURIComponent(r.id)}`)}
-                        disabled={!isAdmin && !isManager && !isSelf}
-                        title="Manage project access"
+                        title="Assign projects for this user"
                       >
-                        Project access
+                        Manage projects
                       </button>
 
                       <button
@@ -369,7 +372,9 @@ function ProfilesInner() {
                       <select
                         value={r.role}
                         disabled={!canChangeRole}
-                        onChange={(e) => setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, role: e.target.value as Role } : x)))}
+                        onChange={(e) =>
+                          setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, role: e.target.value as Role } : x)))
+                        }
                       >
                         <option value="contractor">contractor</option>
                         <option value="manager">manager</option>
@@ -409,7 +414,9 @@ function ProfilesInner() {
                           setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, hourly_rate: Number(e.target.value) } : x)))
                         }
                       />
-                      {!canEditHourlyRate ? <div className="muted prfHint">{isManager ? "Direct reports only" : "Locked"}</div> : null}
+                      {!canEditHourlyRate ? (
+                        <div className="muted prfHint">{isManager ? "Direct reports only" : "Locked"}</div>
+                      ) : null}
                     </div>
 
                     <div>
@@ -433,7 +440,11 @@ function ProfilesInner() {
                         <button className="pill" onClick={() => copyToClipboard(r.id)} title="Copy user ID">
                           Copy ID
                         </button>
-                        <button className="pill" onClick={() => setMsg(`Selected: ${safeName(r)}\n${r.id}`)} title="Show details in message area">
+                        <button
+                          className="pill"
+                          onClick={() => setMsg(`Selected: ${safeName(r)}\n${r.id}`)}
+                          title="Show details in message area"
+                        >
                           Info
                         </button>
                       </div>
@@ -447,14 +458,6 @@ function ProfilesInner() {
       </div>
     </AppShell>
   );
-}
-
-function copyToClipboard(text: string) {
-  try {
-    navigator.clipboard.writeText(text);
-  } catch {
-    // ignore
-  }
 }
 
 export default function ProfilesPage() {
