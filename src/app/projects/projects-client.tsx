@@ -88,6 +88,11 @@ export default function ProjectsClient() {
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [drawerMsg, setDrawerMsg] = useState<string>("");
 
+  // Manage members state (Admin-only)
+  const [orgPeople, setOrgPeople] = useState<Array<{ id: string; full_name: string | null; role: string | null }>>([]);
+  const [memberPickId, setMemberPickId] = useState<string>("");
+  const [memberActionBusy, setMemberActionBusy] = useState(false);
+
   const isAdmin = profile?.role === "admin";
   const isManagerOrAdmin = profile?.role === "admin" || profile?.role === "manager";
 
@@ -97,7 +102,6 @@ export default function ProjectsClient() {
   }
 
   function setProjectInUrl(projectId: string) {
-    // Fix: ensure proper ? / & handling
     const params = new URLSearchParams();
     if (manageUserId) params.set("user", manageUserId);
     if (projectId) params.set("project", projectId);
@@ -156,6 +160,35 @@ export default function ProjectsClient() {
     reloadProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, userId, profile, profErr, router]);
+
+  // Load org people (for Admin drawer member management)
+  useEffect(() => {
+    if (!profile) return;
+    if (!isAdmin) return;
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, role, is_active")
+        .eq("org_id", profile.org_id)
+        .order("full_name", { ascending: true });
+
+      if (cancelled) return;
+
+      if (error) return;
+
+      const list = (data || [])
+        .filter((p: any) => p.is_active !== false)
+        .map((p: any) => ({ id: p.id, full_name: p.full_name ?? null, role: p.role ?? null }));
+
+      setOrgPeople(list);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.org_id, isAdmin]);
 
   // Load user being managed + membership map (Admin only)
   useEffect(() => {
@@ -357,441 +390,4 @@ export default function ProjectsClient() {
     if (!profile) return;
     if (!isAdmin) return;
 
-    setSavingWeekStartId(projectId);
-    setFetchErr("");
-
-    try {
-      const { error } = await supabase.from("projects").update({ week_start: weekStart }).eq("id", projectId).eq("org_id", profile.org_id);
-
-      if (error) {
-        setFetchErr(error.message);
-        return;
-      }
-
-      setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, week_start: weekStart } : p)));
-    } finally {
-      setSavingWeekStartId("");
-    }
-  }
-
-  async function openDrawer(projectId: string) {
-    setDrawerOpen(true);
-    setDrawerProjectId(projectId);
-    setDrawerMembers([]);
-    setDrawerMsg("");
-    setDrawerBusy(true);
-
-    try {
-      const { data, error } = await supabase
-        .from("project_members")
-        .select("profile_id, profiles:profile_id(full_name, role)")
-        .eq("project_id", projectId)
-        .eq("is_active", true);
-
-      if (error) {
-        setDrawerMsg(error.message);
-        return;
-      }
-
-      const members: DrawerMember[] =
-        (data || []).map((r: any) => ({
-          profile_id: r.profile_id,
-          full_name: r.profiles?.full_name ?? null,
-          role: r.profiles?.role ?? null,
-        })) || [];
-
-      members.sort((a, b) => (a.full_name || a.profile_id).localeCompare(b.full_name || b.profile_id));
-      setDrawerMembers(members);
-    } finally {
-      setDrawerBusy(false);
-    }
-  }
-
-  function closeDrawer() {
-    setDrawerOpen(false);
-    setDrawerProjectId("");
-    setDrawerMembers([]);
-    setDrawerMsg("");
-    setDrawerBusy(false);
-  }
-
-  const drawerProject = useMemo(() => {
-    if (!drawerProjectId) return null;
-    return projects.find((p) => p.id === drawerProjectId) || null;
-  }, [drawerProjectId, projects]);
-
-  // ---- guards ----
-  if (loading) {
-    return (
-      <AppShell title="Projects" subtitle="Create projects and manage access">
-        <div className="card cardPad">Loading…</div>
-      </AppShell>
-    );
-  }
-
-  if (!userId) {
-    return (
-      <AppShell title="Projects" subtitle="Create projects and manage access">
-        <div className="card cardPad">
-          <div style={{ fontWeight: 950, marginBottom: 8 }}>Please log in.</div>
-          <button className="btnPrimary" onClick={() => router.push("/login")}>
-            Go to Login
-          </button>
-        </div>
-      </AppShell>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <AppShell title="Projects" subtitle="Create projects and manage access">
-        <div className="alert alertWarn">
-          <div style={{ fontWeight: 950 }}>Logged in, but profile could not be loaded.</div>
-          <pre style={{ whiteSpace: "pre-wrap", marginTop: 10 }}>{profErr || "No details."}</pre>
-        </div>
-      </AppShell>
-    );
-  }
-
-  const headerRight = (
-    <div className="prHeaderRight">
-      {manageUserId ? (
-        <>
-          <button className="pill" onClick={() => router.push("/profiles")}>
-            Back to People
-          </button>
-          <button className="pill" onClick={() => router.replace("/projects")}>
-            Exit Access Mode
-          </button>
-        </>
-      ) : null}
-    </div>
-  );
-
-  const subtitle = manageUserId ? "Assign project access to a user" : "Create projects, activate/deactivate, and manage access";
-
-  return (
-    <AppShell title="Projects" subtitle={subtitle} right={headerRight}>
-      {fetchErr ? (
-        <div className="alert alertInfo">
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{fetchErr}</pre>
-        </div>
-      ) : null}
-
-      {/* Admin: create project */}
-      {isAdmin && !manageUserId ? (
-        <div className="card cardPad prShell" style={{ marginTop: 14 }}>
-          <div className="prCardHeader">
-            <div>
-              <div className="prTitle">Create project</div>
-              <div className="muted prSub">
-                Project-level settings (like week start) are used across reports and timesheets.
-              </div>
-            </div>
-            {tag("Admin")}
-          </div>
-
-          <div className="prCreateGrid">
-            <div>
-              <div className="prLabel">Project name</div>
-              <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Retail KPI Dashboard" />
-            </div>
-
-            <div>
-              <div className="prLabel">Week start</div>
-              <select value={newWeekStart} onChange={(e) => setNewWeekStart(e.target.value as WeekStart)}>
-                <option value="sunday">Sunday</option>
-                <option value="monday">Monday</option>
-              </select>
-            </div>
-
-            <div className="prCreateBtnWrap">
-              <button className="btnPrimary" onClick={createProject} disabled={createBusy || newName.trim().length < 2}>
-                {createBusy ? "Creating…" : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Search + Filter bar */}
-      <div className="card cardPad prShell" style={{ marginTop: 14 }}>
-        <div className="prFilters">
-          <div className="prFiltersLeft">
-            <div className="prField prSearch">
-              <div className="prLabel">Search</div>
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or ID…" />
-            </div>
-
-            <div className="prField">
-              <div className="prLabel">Status</div>
-              <select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as ActiveFilter)}>
-                <option value="all">All</option>
-                <option value="active">Active only</option>
-                <option value="inactive">Inactive only</option>
-              </select>
-            </div>
-
-            <div className="prClearWrap">
-              <button className="pill" onClick={() => { setQ(""); setActiveFilter("all"); }}>
-                Clear
-              </button>
-            </div>
-          </div>
-
-          <div className="prFiltersRight">
-            {tag(`Total: ${counts.total}`)}
-            {tag(`Active: ${counts.active}`, "ok")}
-            {tag(`Inactive: ${counts.inactive}`, "muted")}
-            {tag(`Showing: ${filteredProjects.length}`)}
-          </div>
-        </div>
-      </div>
-
-      {/* Admin access mode */}
-      {isAdmin && manageUserId ? (
-        <div className="card cardPad prShell" style={{ marginTop: 14 }}>
-          <div className="prCardHeader">
-            <div>
-              <div className="prTitle">Manage project access</div>
-              <div className="muted prSub">
-                User: <b>{manageUser?.full_name || manageUserId}</b> {manageUser?.role ? `(${manageUser.role})` : ""}
-              </div>
-            </div>
-            {tag("Grant / remove access")}
-          </div>
-
-          <div className="muted" style={{ marginTop: 10, fontSize: 13 }}>
-            Toggle projects to grant access. Click a project row to open details.
-          </div>
-
-          <div className="prList" style={{ marginTop: 12 }}>
-            {filteredProjects.length === 0 ? (
-              <div className="muted">No projects match your filters.</div>
-            ) : (
-              filteredProjects.map((p) => {
-                const assigned = assignedProjectIds.has(p.id);
-                const busy = busyProjectId === p.id;
-
-                return (
-                  <div key={p.id} className={`prRow ${!p.is_active ? "prRowInactive" : ""}`} onClick={() => openDrawer(p.id)}>
-                    <div className="prRowLeft">
-                      <input
-                        type="checkbox"
-                        checked={assigned}
-                        disabled={busy}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => toggleAssignment(p.id, e.target.checked)}
-                        className="prCheck"
-                        aria-label="Toggle assignment"
-                      />
-                      <div>
-                        <div className="prRowTitle">
-                          <span>{p.name}</span>
-                          {!p.is_active ? tag("Inactive", "warn") : null}
-                          {tag(weekStartLabel(p.week_start))}
-                        </div>
-                        <div className="prRowMeta muted">{p.id}</div>
-                      </div>
-                    </div>
-
-                    <div className="prRowRight muted">{busy ? "Updating…" : assigned ? "Assigned" : "Not assigned"}</div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Projects list */}
-      <div className="card cardPad prShell" style={{ marginTop: 14 }}>
-        <div className="prCardHeader">
-          <div>
-            <div className="prTitle">All projects</div>
-            <div className="muted prSub">
-              Click a row to open project details. Use People → Project access to assign members.
-            </div>
-          </div>
-          {tag(`Showing ${filteredProjects.length}`)}
-        </div>
-
-        {filteredProjects.length === 0 ? (
-          <div className="muted" style={{ marginTop: 12 }}>
-            No projects match your filters.
-          </div>
-        ) : (
-          <div className="prList" style={{ marginTop: 12 }}>
-            {filteredProjects.map((p) => {
-              const busy = busyProjectId === p.id;
-              const savingWs = savingWeekStartId === p.id;
-
-              return (
-                <div key={p.id} className="prRow" onClick={() => openDrawer(p.id)} title="Open project details">
-                  <div className="prRowLeft">
-                    <div className="prDot" aria-hidden />
-                    <div>
-                      <div className="prRowTitle">
-                        <span>{p.name}</span>
-                        {!p.is_active ? tag("Inactive", "warn") : null}
-                        {tag(weekStartLabel(p.week_start))}
-                      </div>
-                      <div className="prRowMeta muted">{p.id}</div>
-                    </div>
-                  </div>
-
-                  <div className="prRowActions" onClick={(e) => e.stopPropagation()}>
-                    {isAdmin ? (
-                      <div className="prInline">
-                        <span className="muted prInlineLabel">Week start</span>
-                        <select
-                          value={(p.week_start || "sunday") as WeekStart}
-                          disabled={savingWs}
-                          onChange={(e) => updateProjectWeekStart(p.id, e.target.value as WeekStart)}
-                        >
-                          <option value="sunday">Sunday</option>
-                          <option value="monday">Monday</option>
-                        </select>
-                        <span className="muted prInlineSaving">{savingWs ? "Saving…" : ""}</span>
-                      </div>
-                    ) : null}
-
-                    <button className="pill" onClick={() => setProjectInUrl(p.id)}>
-                      Select
-                    </button>
-
-                    {isAdmin ? (
-                      <button className="pill" disabled={busy} onClick={() => toggleProjectActive(p.id, !p.is_active)}>
-                        {busy ? "Working…" : p.is_active ? "Deactivate" : "Activate"}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="prSelected">
-          <div className="prLabel">Selected project</div>
-          <select value={selectedProjectId} onChange={(e) => setProjectInUrl(e.target.value)} className="prSelectedSelect">
-            <option value="">— Select a project —</option>
-            {filteredProjects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.is_active ? "" : " (inactive)"}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Drawer */}
-      {drawerOpen && drawerProject ? (
-        <div className="prDrawerOverlay" onClick={closeDrawer}>
-          <div className="prDrawer" onClick={(e) => e.stopPropagation()}>
-            <div className="prDrawerHeader">
-              <div>
-                <div className="prDrawerTitle">{drawerProject.name}</div>
-                <div className="prDrawerTags">
-                  {drawerProject.is_active ? tag("Active", "ok") : tag("Inactive", "warn")}
-                  {tag(weekStartLabel(drawerProject.week_start))}
-                </div>
-              </div>
-              <button className="pill" onClick={closeDrawer} aria-label="Close">
-                Close
-              </button>
-            </div>
-
-            <div className="card cardPad">
-              <div className="prLabel">Project ID</div>
-              <div className="prIdRow">
-                <code className="prCode">{drawerProject.id}</code>
-                <button className="pill" onClick={() => copyToClipboard(drawerProject.id)}>
-                  Copy
-                </button>
-              </div>
-            </div>
-
-            <div className="card cardPad">
-              <div className="prCardHeader">
-                <div>
-                  <div className="prTitle" style={{ fontSize: 14 }}>Settings</div>
-                  <div className="muted prSub" style={{ marginTop: 4 }}>
-                    Week start affects weekly reports and timesheet week boundaries.
-                  </div>
-                </div>
-                {isAdmin ? tag("Admin") : tag("Read only")}
-              </div>
-
-              <div className="prDrawerSettings">
-                <div>
-                  <div className="prLabel">Week start</div>
-                  <select
-                    value={(drawerProject.week_start || "sunday") as WeekStart}
-                    disabled={!isAdmin || savingWeekStartId === drawerProject.id}
-                    onChange={(e) => updateProjectWeekStart(drawerProject.id, e.target.value as WeekStart)}
-                  >
-                    <option value="sunday">Sunday</option>
-                    <option value="monday">Monday</option>
-                  </select>
-                </div>
-
-                {isAdmin ? (
-                  <div className="prDrawerActions">
-                    <button
-                      className="pill"
-                      disabled={busyProjectId === drawerProject.id}
-                      onClick={() => toggleProjectActive(drawerProject.id, !drawerProject.is_active)}
-                      title="Enable/disable this project"
-                    >
-                      {busyProjectId === drawerProject.id ? "Working…" : drawerProject.is_active ? "Deactivate" : "Activate"}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="card cardPad prDrawerMembers">
-              <div className="prCardHeader">
-                <div>
-                  <div className="prTitle">Members</div>
-                  <div className="muted prSub">Read-only list for now (member management is next).</div>
-                </div>
-                {tag(String(drawerMembers.length))}
-              </div>
-
-              {drawerMsg ? (
-                <div className="alert alertInfo" style={{ marginTop: 10 }}>
-                  <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{drawerMsg}</pre>
-                </div>
-              ) : null}
-
-              {drawerBusy ? (
-                <div className="muted" style={{ marginTop: 12 }}>Loading members…</div>
-              ) : drawerMembers.length === 0 ? (
-                <div className="muted" style={{ marginTop: 12 }}>No active members on this project.</div>
-              ) : (
-                <div className="prMemberList" style={{ marginTop: 12 }}>
-                  {drawerMembers.map((m) => (
-                    <div key={m.profile_id} className="prMemberRow">
-                      <div className="prMemberTop">
-                        <span className="prMemberName">{m.full_name || m.profile_id}</span>
-                        {m.role ? tag(m.role) : null}
-                      </div>
-                      <div className="muted prMemberId">{m.profile_id}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="muted prDrawerFooter">
-              Tip: Next step will add “Manage members” inside this drawer for Admins.
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </AppShell>
-  );
-}
+    setSavingWeekStartId
