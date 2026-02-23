@@ -1,4 +1,226 @@
 /*
+  Monday-style shell foundation:
+  - fixed sidebar
+  - top header bar
+  - centered content cards
+  - profile dropdown
+*/
+
+:root {
+  --mw-sidebar-w: 240px;
+  --mw-top-h: 56px;
+}
+
+/* App shell layout */
+.mwShellTop {
+  position: relative;
+}
+
+/* Top header */
+.mwTopInner {
+  height: var(--mw-top-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: rgba(246, 247, 251, 0.92);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+}
+
+.mwBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 950;
+}
+
+.mwBrandDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.12);
+}
+
+.mwBrandName {
+  letter-spacing: -0.01em;
+}
+
+.mwTopRight {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Profile button */
+.mwProfileBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.8);
+  border-radius: 999px;
+  padding: 8px 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.mwAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 950;
+  background: rgba(37, 99, 235, 0.14);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+}
+
+.mwProfileMeta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  text-align: left;
+}
+
+.mwProfileName {
+  font-weight: 950;
+  font-size: 13px;
+}
+
+.mwProfileRole {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.mwChevron {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+/* Dropdown menu */
+.mwMenu {
+  position: absolute;
+  right: 0;
+  top: calc(var(--mw-top-h) - 6px);
+  width: 280px;
+  background: rgba(255,255,255,0.98);
+  border: 1px solid rgba(15,23,42,0.10);
+  border-radius: 16px;
+  box-shadow: 0 16px 50px rgba(15,23,42,0.18);
+  padding: 10px;
+  z-index: 80;
+}
+
+.mwMenuSection {
+  display: grid;
+  gap: 4px;
+}
+
+.mwMenuTitle {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 6px 6px 4px;
+}
+
+.mwMenuItem {
+  display: flex;
+  align-items: center;
+  padding: 10px 10px;
+  border-radius: 12px;
+  font-weight: 900;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+
+.mwMenuItem:hover {
+  background: rgba(15,23,42,0.04);
+  border-color: rgba(15,23,42,0.06);
+}
+
+.mwMenuItemActive {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.16);
+}
+
+.mwMenuDivider {
+  height: 1px;
+  background: rgba(15,23,42,0.08);
+  margin: 10px 0;
+}
+
+.mwDanger {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.06);
+  border-color: rgba(220, 38, 38, 0.16);
+}
+
+/* Sidebar */
+.mwSidebar {
+  position: fixed;
+  top: var(--mw-top-h);
+  left: 0;
+  bottom: 0;
+  width: var(--mw-sidebar-w);
+  background: rgba(255,255,255,0.65);
+  border-right: 1px solid rgba(15,23,42,0.10);
+  padding: 12px;
+  z-index: 40;
+  backdrop-filter: blur(10px);
+}
+
+.mwSideSection {
+  display: grid;
+  gap: 6px;
+}
+
+.mwSideItem {
+  padding: 10px 10px;
+  border-radius: 12px;
+  font-weight: 900;
+  color: rgba(15,23,42,0.80);
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.mwSideItem:hover {
+  background: rgba(15,23,42,0.04);
+  border-color: rgba(15,23,42,0.06);
+}
+
+.mwSideItemActive {
+  background: rgba(37,99,235,0.10);
+  border-color: rgba(37,99,235,0.18);
+}
+
+/* Make your existing container respect sidebar */
+.container {
+  margin-left: var(--mw-sidebar-w);
+  padding-top: 18px;
+}
+
+/* Mobile: collapse sidebar (we’ll do full drawer behavior in the next step) */
+@media (max-width: 900px) {
+  .mwSidebar {
+    display: none;
+  }
+  .container {
+    margin-left: 0;
+  }
+}
+
+/*
   Modern SaaS (Option C): soft gray app background + white cards + subtle shadow.
   No Tailwind. Theme + density are controlled by:
     html[data-accent="..."]
