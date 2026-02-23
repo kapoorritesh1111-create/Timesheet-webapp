@@ -72,7 +72,7 @@ export default function AppearanceSettingsPage() {
     document.documentElement.dataset.radius = radius;
 
     try {
-      localStorage.setItem("ts_theme_prefs", JSON.stringify({ accent, density, radius }));
+      localStorage.setItem("ts_ui_prefs_v1", JSON.stringify({ accent, density, radius }));
     } catch {}
   }, [accent, density, radius]);
 
