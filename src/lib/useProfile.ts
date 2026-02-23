@@ -15,15 +15,13 @@ export type Profile = {
   is_active: boolean | null;
   manager_id: string | null;
 
-  // Professional profile fields (current DB baseline)
   phone: string | null;
   address: string | null;
   avatar_url: string | null;
 
-  // ✅ Appearance preferences (jsonb)
+  // ✅ important for Step 5
   ui_prefs: any | null;
 
-  // Onboarding flag
   onboarding_completed_at: string | null;
 };
 
@@ -42,7 +40,7 @@ async function fetchMyProfile(uid: string) {
         "phone",
         "address",
         "avatar_url",
-        "ui_prefs", // ✅ IMPORTANT: load the saved prefs
+        "ui_prefs",
         "onboarding_completed_at",
       ].join(", ")
     )
@@ -60,51 +58,56 @@ export function useProfile() {
     setLoading(true);
     setError("");
 
-    const { data: sessionData, error: sessErr } = await supabase.auth.getSession();
+    try {
+      const { data: sessionData, error: sessErr } = await supabase.auth.getSession();
 
-    if (sessErr) {
+      if (sessErr) {
+        setUserId(null);
+        setProfile(null);
+        setError(`Auth session error: ${sessErr.message}`);
+        return;
+      }
+
+      const uid = sessionData.session?.user?.id ?? null;
+      setUserId(uid);
+
+      if (!uid) {
+        setProfile(null);
+        return;
+      }
+
+      const { data: prof, error: profErr } = await fetchMyProfile(uid);
+
+      if (profErr) {
+        setProfile(null);
+        setError(`Profile query error: ${profErr.message}`);
+        return;
+      }
+
+      if (!prof) {
+        setProfile(null);
+        setError(
+          "Profile missing: no row found in `profiles` for this user. An admin must create it (or enable auto-create trigger)."
+        );
+        return;
+      }
+
+      setProfile(prof as any);
+    } catch (e: any) {
       setUserId(null);
       setProfile(null);
-      setError(`Auth session error: ${sessErr.message}`);
+      setError(e?.message ? String(e.message) : "Unexpected profile hydration error.");
+    } finally {
+      // ✅ critical: never leave the app stuck blank
       setLoading(false);
-      return;
     }
-
-    const uid = sessionData.session?.user?.id ?? null;
-    setUserId(uid);
-
-    if (!uid) {
-      setProfile(null);
-      setLoading(false);
-      return;
-    }
-
-    const { data: prof, error: profErr } = await fetchMyProfile(uid);
-
-    if (profErr) {
-      setProfile(null);
-      setError(`Profile query error: ${profErr.message}`);
-      setLoading(false);
-      return;
-    }
-
-    if (!prof) {
-      setProfile(null);
-      setError(
-        "Profile missing: no row found in `profiles` for this user. An admin must create it (or enable auto-create trigger)."
-      );
-      setLoading(false);
-      return;
-    }
-
-    setProfile(prof as any);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
+      if (cancelled) return;
       await hydrate();
     })();
 
@@ -119,7 +122,6 @@ export function useProfile() {
     };
   }, [hydrate]);
 
-  // ✅ so your Appearance page's refresh?.() actually works
   const refresh = useCallback(async () => {
     await hydrate();
   }, [hydrate]);
