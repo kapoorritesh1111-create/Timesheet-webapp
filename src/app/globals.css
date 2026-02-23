@@ -11,6 +11,8 @@
    ========================= */
 
 :root {
+  --ease: cubic-bezier(.2,.8,.2,1);
+  --t: 180ms var(--ease);
   /* shell sizing */
   --mw-sidebar-w: 240px;
   --mw-top-h: 56px;
@@ -390,7 +392,14 @@ a { color: inherit; text-decoration: none; }
 }
 
 .cardPad { padding: var(--space-3); }
+.card { transition: transform var(--t), box-shadow var(--t), border-color var(--t); }
+.card:hover { transform: translateY(-1px); box-shadow: 0 14px 40px rgba(15,23,42,0.10); }
 
+.mwSideItem { transition: background var(--t), border-color var(--t), transform var(--t); }
+.mwSideItem:hover { transform: translateX(1px); }
+
+button { transition: transform var(--t), box-shadow var(--t), background var(--t), border-color var(--t); }
+button:active { transform: translateY(1px); }
 /* grids */
 .grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
