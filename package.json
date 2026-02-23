@@ -10,20 +10,19 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "ci": "npm run lint && npm run typecheck && npm run build"
   },
-"dependencies": {
-  "@supabase/supabase-js": "^2.45.4",
-  "next": "^14.2.35",
-  "react": "^18.2.0",
-  "react-dom": "^18.2.0",
-  "lucide-react": "^0.445.0"
-}
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "lucide-react": "^0.445.0",
+    "next": "^14.2.35",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.2",
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.35"
+    "eslint-config-next": "^14.2.35",
+    "typescript": "^5.4.2"
   }
 }
