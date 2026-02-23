@@ -1,4 +1,4 @@
-// src/app/profiles/page.tsx
+// src/app/profiles/page.tsx, Add lucide-react dependency
 "use client";
 
 import RequireOnboarding from "../../components/auth/RequireOnboarding";
