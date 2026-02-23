@@ -2,125 +2,176 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseBrowser";
 import { useProfile } from "../../lib/useProfile";
 
-function initials(name?: string | null) {
-  const s = (name || "").trim();
-  if (!s) return "U";
-  const parts = s.split(/\s+/).filter(Boolean);
-  const a = parts[0]?.[0] ?? "U";
-  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : "";
-  return (a + b).toUpperCase();
+function cn(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
 }
 
-type NavItem = { href: string; label: string };
+function initials(name?: string) {
+  if (!name) return "U";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase()).join("") || "U";
+}
 
 export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile } = useProfile();
+  const { profile } = useProfile() as any;
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const isAdmin = profile?.role === "admin";
-  const isManager = profile?.role === "manager";
+  const role = (profile?.role || "contractor") as string;
+  const fullName = (profile?.full_name || "") as string;
 
-  const nav: NavItem[] = useMemo(() => {
-    const items: NavItem[] = [
-      { href: "/dashboard", label: "Home" },
-      { href: "/timesheet", label: "My work" },
+  const isAdmin = role === "admin";
+
+  const links = useMemo(
+    () => [
+      { href: "/dashboard", label: "Dashboard" },
+      { href: "/timesheet", label: "Timesheet" },
+      { href: "/approvals", label: "Approvals" },
+      // Keep this pointing to the REAL route (we also add /payroll redirect separately)
+      { href: "/reports/payroll", label: "Payroll" },
       { href: "/projects", label: "Projects" },
-    ];
+      { href: "/profiles", label: "People" },
+    ],
+    []
+  );
 
-    // People + Payroll are typically manager/admin surfaces
-    if (isAdmin || isManager) items.push({ href: "/profiles", label: "People" });
-    if (isAdmin || isManager) items.push({ href: "/payroll", label: "Payroll" });
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
-    items.push({ href: "/settings/appearance", label: "Settings" });
-
-    // Admin console if you already have it
-    if (isAdmin) items.push({ href: "/admin", label: "Admin" });
-
-    return items;
-  }, [isAdmin, isManager]);
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(e.target as Node)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
   async function logout() {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      router.push("/login");
-    }
+    await supabase.auth.signOut();
+    router.push("/login");
   }
 
   return (
-    <div className="mwShellTop">
-      <div className="mwTopInner">
-        <div className="mwBrand">
-          <span className="mwBrandDot" />
-          <span className="mwBrandName">Timesheet</span>
-        </div>
+    <div className="topNav">
+      <div className="topNavInner">
+        <Link href="/dashboard" className="brand">
+          <span className="brandDot" />
+          <span>Timesheet</span>
+        </Link>
 
-        <div className="mwTopRight">
-          <button className="mwProfileBtn" onClick={() => setMenuOpen((v) => !v)}>
-            <span className="mwAvatar">{initials(profile?.full_name)}</span>
-            <span className="mwProfileMeta">
-              <span className="mwProfileName">{profile?.full_name || "Account"}</span>
-              <span className="mwProfileRole">{profile?.role || ""}</span>
-            </span>
-            <span className="mwChevron">▾</span>
-          </button>
-
-          {menuOpen && (
-            <div className="mwMenu" onMouseLeave={() => setMenuOpen(false)}>
-              <div className="mwMenuSection">
-                <div className="mwMenuTitle">Account</div>
-                <Link className="mwMenuItem" href="/settings/profile" onClick={() => setMenuOpen(false)}>
-                  My profile
-                </Link>
-                <Link className="mwMenuItem" href="/settings/appearance" onClick={() => setMenuOpen(false)}>
-                  Change theme
-                </Link>
-              </div>
-
-              <div className="mwMenuDivider" />
-
-              <div className="mwMenuSection">
-                <div className="mwMenuTitle">Navigate</div>
-                {nav.map((i) => (
-                  <Link
-                    key={i.href}
-                    href={i.href}
-                    className={"mwMenuItem " + (pathname?.startsWith(i.href) ? "mwMenuItemActive" : "")}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {i.label}
-                  </Link>
-                ))}
-              </div>
-
-              <div className="mwMenuDivider" />
-
-              <button className="mwMenuItem mwDanger" onClick={logout}>
-                Log out
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Sidebar (monday-like) */}
-      <div className="mwSidebar">
-        <div className="mwSideSection">
-          {nav.map((i) => {
-            const active = pathname?.startsWith(i.href);
+        <div className="navLinks">
+          {links.map((l) => {
+            const active = pathname === l.href || pathname?.startsWith(l.href + "/");
             return (
-              <Link key={i.href} href={i.href} className={"mwSideItem " + (active ? "mwSideItemActive" : "")}>
-                {i.label}
+              <Link
+                key={l.href}
+                href={l.href}
+                className={cn("pill", active && "pillActive")}
+              >
+                {l.label}
               </Link>
             );
           })}
+        </div>
+
+        {/* Profile dropdown */}
+        <div ref={menuRef} style={{ position: "relative" }}>
+          <button
+            className="pill"
+            onClick={() => setOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            style={{ gap: 10 }}
+          >
+            <span
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 999,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 12,
+                fontWeight: 950,
+                border: "1px solid rgba(15, 23, 42, 0.12)",
+                background: "rgba(255,255,255,0.9)",
+              }}
+              title={fullName || "Account"}
+            >
+              {initials(fullName)}
+            </span>
+            <span style={{ fontWeight: 900 }}>
+              {fullName ? fullName.split(" ")[0] : "Account"}
+            </span>
+          </button>
+
+          {open && (
+            <div
+              className="card"
+              style={{
+                position: "absolute",
+                right: 0,
+                top: "calc(100% + 8px)",
+                width: 260,
+                padding: 10,
+                zIndex: 60,
+              }}
+              role="menu"
+            >
+              <div className="muted" style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>
+                ACCOUNT
+              </div>
+
+              <Link
+                className="pill"
+                style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}
+                href="/settings/profile"
+                onClick={() => setOpen(false)}
+              >
+                My profile <span className="muted">→</span>
+              </Link>
+
+              <Link
+                className="pill"
+                style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}
+                href="/settings/appearance"
+                onClick={() => setOpen(false)}
+              >
+                Change theme <span className="muted">→</span>
+              </Link>
+
+              {isAdmin && (
+                <Link
+                  className="pill"
+                  style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}
+                  href="/admin"
+                  onClick={() => setOpen(false)}
+                >
+                  Admin <span className="muted">→</span>
+                </Link>
+              )}
+
+              <button
+                className="pill"
+                style={{
+                  width: "100%",
+                  justifyContent: "space-between",
+                  borderColor: "rgba(220,38,38,0.25)",
+                  background: "rgba(220,38,38,0.06)",
+                }}
+                onClick={logout}
+              >
+                Log out <span className="muted">↩</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
