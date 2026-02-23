@@ -6,6 +6,7 @@ import AppShell from "../../../components/layout/AppShell";
 import { useProfile } from "../../../lib/useProfile";
 import { supabase } from "../../../lib/supabaseBrowser";
 
+// Keep types narrow so UI stays consistent.
 type Accent = "blue" | "indigo" | "emerald" | "rose" | "slate";
 type Density = "comfortable" | "compact";
 type Radius = "md" | "lg" | "xl";
@@ -32,63 +33,51 @@ function isRadius(v: unknown): v is Radius {
   return v === "md" || v === "lg" || v === "xl";
 }
 
-function normalizePrefs(raw: any): UiPrefs {
+function readPrefs(raw: any): UiPrefs {
   const base: UiPrefs = { ...DEFAULT_PREFS };
-  if (!raw) return base;
+  const p = raw?.ui_prefs;
 
-  if (typeof raw === "string") {
-    try {
-      raw = JSON.parse(raw);
-    } catch {
-      return base;
-    }
+  if (p && typeof p === "object") {
+    if (isAccent(p.accent)) base.accent = p.accent;
+    if (isDensity(p.density)) base.density = p.density;
+    if (isRadius(p.radius)) base.radius = p.radius;
+    return base;
   }
 
-  if (typeof raw !== "object") return base;
-
-  if (isAccent(raw.accent)) base.accent = raw.accent;
-  if (isDensity(raw.density)) base.density = raw.density;
-  if (isRadius(raw.radius)) base.radius = raw.radius;
+  // fallback to localStorage if profile not ready yet
+  try {
+    const ls = localStorage.getItem("ts_theme_prefs");
+    if (ls) {
+      const parsed = JSON.parse(ls);
+      if (isAccent(parsed.accent)) base.accent = parsed.accent;
+      if (isDensity(parsed.density)) base.density = parsed.density;
+      if (isRadius(parsed.radius)) base.radius = parsed.radius;
+    }
+  } catch {}
 
   return base;
 }
 
-function readLocalPrefs(): UiPrefs | null {
-  try {
-    const v = localStorage.getItem("ts_theme_prefs");
-    if (!v) return null;
-    return normalizePrefs(v);
-  } catch {
-    return null;
-  }
-}
-
 export default function AppearanceSettingsPage() {
-  const { profile, refresh } = useProfile() as any;
+  const { profile, refresh, loading: profLoading, error } = useProfile() as any;
   const profileAny = profile as any;
 
-  // Prefer DB prefs if available, otherwise localStorage, otherwise defaults.
-  const initialPrefs = useMemo(() => {
-    const fromDb = normalizePrefs(profileAny?.ui_prefs);
-    // If DB prefs are still defaults and we have localStorage, use local for initial render.
-    // (Prevents “saved but not applied” feeling during hydration.)
-    const local = typeof window !== "undefined" ? readLocalPrefs() : null;
-    return profileAny?.ui_prefs ? fromDb : (local ?? fromDb);
-  }, [profileAny?.id, profileAny?.ui_prefs]);
+  const initialPrefs = useMemo(() => readPrefs(profileAny), [profileAny?.id, profileAny?.ui_prefs]);
 
-  const [accent, setAccent] = useState<Accent>(DEFAULT_PREFS.accent);
-  const [density, setDensity] = useState<Density>(DEFAULT_PREFS.density);
-  const [radius, setRadius] = useState<Radius>(DEFAULT_PREFS.radius);
+  const [accent, setAccent] = useState<Accent>(initialPrefs.accent);
+  const [density, setDensity] = useState<Density>(initialPrefs.density);
+  const [radius, setRadius] = useState<Radius>(initialPrefs.radius);
   const [saving, setSaving] = useState(false);
 
-  // Sync state when initialPrefs changes (DB or local)
+  // IMPORTANT: when ui_prefs changes, update local state (refresh-safe)
   useEffect(() => {
     setAccent(initialPrefs.accent);
     setDensity(initialPrefs.density);
     setRadius(initialPrefs.radius);
-  }, [initialPrefs.accent, initialPrefs.density, initialPrefs.radius]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileAny?.id, profileAny?.ui_prefs]);
 
-  // Apply immediately to DOM + persist locally for instant refresh behavior
+  // Apply visual effects immediately (CSS hooks)
   useEffect(() => {
     document.documentElement.dataset.accent = accent;
     document.documentElement.dataset.density = density;
@@ -105,10 +94,7 @@ export default function AppearanceSettingsPage() {
 
     const ui_prefs: UiPrefs = { accent, density, radius };
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({ ui_prefs })
-      .eq("id", profileAny.id);
+    const { error } = await supabase.from("profiles").update({ ui_prefs }).eq("id", profileAny.id);
 
     setSaving(false);
 
@@ -117,17 +103,23 @@ export default function AppearanceSettingsPage() {
       return;
     }
 
-    // refresh profile so ThemeProvider picks up DB changes too
     await refresh?.();
-    alert("Saved.");
   }
 
   return (
     <RequireOnboarding>
       <AppShell title="Appearance" subtitle="Customize how Timesheet looks for you">
         <div className="card cardPad" style={{ maxWidth: 720 }}>
+          {profLoading ? (
+            <div className="alert alertInfo">Loading your profile…</div>
+          ) : error ? (
+            <div className="alert" style={{ borderColor: "rgba(220,38,38,0.35)" }}>
+              {String(error)}
+            </div>
+          ) : null}
+
           <div className="muted" style={{ marginBottom: 10 }}>
-            These settings are per-user. (Admins can enforce org policies later.)
+            These settings are per-user.
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -167,13 +159,9 @@ export default function AppearanceSettingsPage() {
           </div>
 
           <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
-            <button className="btn btnPrimary" onClick={save} disabled={saving}>
+            <button className="btn btnPrimary" onClick={save} disabled={saving || profLoading}>
               {saving ? "Saving..." : "Save"}
             </button>
-          </div>
-
-          <div className="muted" style={{ marginTop: 12, fontSize: 12 }}>
-            Tip: if saving fails for contractors, apply the Step 5 SQL trigger patch to allow <code>ui_prefs</code>.
           </div>
         </div>
       </AppShell>
