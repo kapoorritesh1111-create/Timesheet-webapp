@@ -51,20 +51,19 @@ export default function AppearanceSettingsPage() {
   const { profile, refresh } = useProfile() as any;
   const profileAny = profile as any;
 
-  const initialPrefs = useMemo(() => readPrefs(profileAny), [profileAny?.id, profileAny?.ui_prefs]);
+  const initialPrefs = useMemo(() => readPrefs(profileAny), [profileAny?.ui_prefs]);
 
   const [accent, setAccent] = useState<Accent>(DEFAULT_PREFS.accent);
   const [density, setDensity] = useState<Density>(DEFAULT_PREFS.density);
   const [radius, setRadius] = useState<Radius>(DEFAULT_PREFS.radius);
   const [saving, setSaving] = useState(false);
 
+  // ✅ Always sync state from latest profile prefs
   useEffect(() => {
-    // This is the line that previously failed — now validated and typed.
     setAccent(initialPrefs.accent);
-    setRadius(initialPrefs.radius);
     setDensity(initialPrefs.density);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileAny?.id]);
+    setRadius(initialPrefs.radius);
+  }, [initialPrefs.accent, initialPrefs.density, initialPrefs.radius]);
 
   // Optional: Apply visual effects immediately (CSS hooks)
   useEffect(() => {
@@ -72,7 +71,6 @@ export default function AppearanceSettingsPage() {
     document.documentElement.dataset.density = density;
     document.documentElement.dataset.radius = radius;
 
-    // local draft persistence
     try {
       localStorage.setItem("ts_theme_prefs", JSON.stringify({ accent, density, radius }));
     } catch {}
@@ -84,10 +82,7 @@ export default function AppearanceSettingsPage() {
 
     const ui_prefs: UiPrefs = { accent, density, radius };
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({ ui_prefs })
-      .eq("id", profileAny.id);
+    const { error } = await supabase.from("profiles").update({ ui_prefs }).eq("id", profileAny.id);
 
     setSaving(false);
 
@@ -105,7 +100,7 @@ export default function AppearanceSettingsPage() {
       <AppShell title="Appearance" subtitle="Customize how Timesheet looks for you">
         <div className="card cardPad" style={{ maxWidth: 720 }}>
           <div className="muted" style={{ marginBottom: 10 }}>
-            These settings are per-user. (Admins can still enforce org policies separately later.)
+            These settings are per-user.
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -145,13 +140,14 @@ export default function AppearanceSettingsPage() {
           </div>
 
           <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
-            <button className="btn btnPrimary" onClick={save} disabled={saving}>
+            <button className="btnPrimary" onClick={save} disabled={saving}>
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
 
           <div className="muted" style={{ marginTop: 12, fontSize: 12 }}>
-            Tip: if saving fails for contractors, update your DB trigger to allow <code>ui_prefs</code> updates.
+            If changes don’t persist after refresh, it means the app shell isn’t applying prefs globally yet — Step 5B fixes
+            that.
           </div>
         </div>
       </AppShell>
