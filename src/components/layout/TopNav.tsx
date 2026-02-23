@@ -2,86 +2,125 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useProfile } from "../../lib/useProfile";
+import { useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseBrowser";
+import { useProfile } from "../../lib/useProfile";
 
-function RoleBadge({ role }: { role: string | null | undefined }) {
-  const r = (role || "").toLowerCase();
-  const cls =
-    r === "admin"
-      ? "badge badgeAdmin"
-      : r === "manager"
-        ? "badge badgeManager"
-        : "badge badgeContractor";
-  return <span className={cls}>{r || "user"}</span>;
+function initials(name?: string | null) {
+  const s = (name || "").trim();
+  if (!s) return "U";
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = parts[0]?.[0] ?? "U";
+  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : "";
+  return (a + b).toUpperCase();
 }
+
+type NavItem = { href: string; label: string };
 
 export default function TopNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const { profile } = useProfile();
 
-  // Hide nav on auth + landing + onboarding
-  if (pathname === "/login" || pathname === "/reset" || pathname === "/" || pathname === "/onboarding") return null;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isAdmin = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
 
-  const role = (profile?.role || "").toLowerCase();
-  const isAdmin = role === "admin";
-  const isManager = role === "manager";
-  const isManagerOrAdmin = isAdmin || isManager;
+  const nav: NavItem[] = useMemo(() => {
+    const items: NavItem[] = [
+      { href: "/dashboard", label: "Home" },
+      { href: "/timesheet", label: "My work" },
+      { href: "/projects", label: "Projects" },
+    ];
 
-  const links: Array<{ href: string; label: string; show?: boolean; match?: "exact" | "prefix" }> = [
-    { href: "/dashboard", label: "Dashboard", match: "exact" },
-    { href: "/timesheet", label: "Timesheet", match: "exact" },
-    { href: "/approvals", label: "Approvals", show: isManagerOrAdmin, match: "exact" },
-    { href: "/settings", label: "Settings", show: true, match: "prefix" },
+    // People + Payroll are typically manager/admin surfaces
+    if (isAdmin || isManager) items.push({ href: "/profiles", label: "People" });
+    if (isAdmin || isManager) items.push({ href: "/payroll", label: "Payroll" });
 
-    // reporting (nested routes should stay active)
-    { href: "/reports/payroll", label: "Payroll", show: true, match: "prefix" },
+    items.push({ href: "/settings/appearance", label: "Settings" });
 
-    { href: "/projects", label: "Projects", match: "exact" },
+    // Admin console if you already have it
+    if (isAdmin) items.push({ href: "/admin", label: "Admin" });
 
-    // ✅ People: Admin + Manager (page itself enforces scoping)
-    { href: "/profiles", label: "People", show: isManagerOrAdmin, match: "exact" },
+    return items;
+  }, [isAdmin, isManager]);
 
-    // Admin only
-    { href: "/admin", label: "Admin", show: isAdmin, match: "exact" },
-  ];
+  async function logout() {
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      router.push("/login");
+    }
+  }
 
   return (
-    <div className="topNav">
-      <div className="topNavInner">
-        <div className="brand" aria-label="Timesheet Webapp">
-          <span className="brandDot" />
-          <span>Timesheet</span>
-          <span style={{ marginLeft: 8 }}>
-            <RoleBadge role={profile?.role} />
-          </span>
+    <div className="mwShellTop">
+      <div className="mwTopInner">
+        <div className="mwBrand">
+          <span className="mwBrandDot" />
+          <span className="mwBrandName">Timesheet</span>
         </div>
 
-        <div className="navLinks">
-          {links
-            .filter((l) => l.show !== false)
-            .map((l) => {
-              const active =
-                l.match === "prefix" ? pathname === l.href || pathname.startsWith(l.href + "/") : pathname === l.href;
-
-              return (
-                <Link key={l.href} href={l.href} className={active ? "pill pillActive" : "pill"}>
-                  {l.label}
-                </Link>
-              );
-            })}
-
-          <button
-            className="pill"
-            onClick={async () => {
-              await supabase.auth.signOut();
-              window.location.href = "/login";
-            }}
-            title="Sign out"
-          >
-            Logout
+        <div className="mwTopRight">
+          <button className="mwProfileBtn" onClick={() => setMenuOpen((v) => !v)}>
+            <span className="mwAvatar">{initials(profile?.full_name)}</span>
+            <span className="mwProfileMeta">
+              <span className="mwProfileName">{profile?.full_name || "Account"}</span>
+              <span className="mwProfileRole">{profile?.role || ""}</span>
+            </span>
+            <span className="mwChevron">▾</span>
           </button>
+
+          {menuOpen && (
+            <div className="mwMenu" onMouseLeave={() => setMenuOpen(false)}>
+              <div className="mwMenuSection">
+                <div className="mwMenuTitle">Account</div>
+                <Link className="mwMenuItem" href="/settings/profile" onClick={() => setMenuOpen(false)}>
+                  My profile
+                </Link>
+                <Link className="mwMenuItem" href="/settings/appearance" onClick={() => setMenuOpen(false)}>
+                  Change theme
+                </Link>
+              </div>
+
+              <div className="mwMenuDivider" />
+
+              <div className="mwMenuSection">
+                <div className="mwMenuTitle">Navigate</div>
+                {nav.map((i) => (
+                  <Link
+                    key={i.href}
+                    href={i.href}
+                    className={"mwMenuItem " + (pathname?.startsWith(i.href) ? "mwMenuItemActive" : "")}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {i.label}
+                  </Link>
+                ))}
+              </div>
+
+              <div className="mwMenuDivider" />
+
+              <button className="mwMenuItem mwDanger" onClick={logout}>
+                Log out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar (monday-like) */}
+      <div className="mwSidebar">
+        <div className="mwSideSection">
+          {nav.map((i) => {
+            const active = pathname?.startsWith(i.href);
+            return (
+              <Link key={i.href} href={i.href} className={"mwSideItem " + (active ? "mwSideItemActive" : "")}>
+                {i.label}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </div>
