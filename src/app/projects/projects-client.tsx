@@ -1,4 +1,3 @@
-// src/app/projects/projects-client.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -36,13 +35,13 @@ type DrawerMember = {
   role: string | null;
 };
 
+function normalize(s: string) {
+  return s.trim().toLowerCase();
+}
+
 function weekStartLabel(ws?: WeekStart | null) {
   const v = ws || "sunday";
   return v === "monday" ? "Week starts Monday" : "Week starts Sunday";
-}
-
-function normalize(s: string) {
-  return s.trim().toLowerCase();
 }
 
 function copyToClipboard(text: string) {
@@ -72,31 +71,33 @@ export default function ProjectsClient() {
   const [busyProjectId, setBusyProjectId] = useState<string>("");
   const [savingWeekStartId, setSavingWeekStartId] = useState<string>("");
 
-  // Admin project creation state
+  // Admin create project
   const [newName, setNewName] = useState("");
   const [newWeekStart, setNewWeekStart] = useState<WeekStart>("sunday");
   const [createBusy, setCreateBusy] = useState(false);
 
-  // Search + filter
+  // Filters
   const [q, setQ] = useState("");
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
 
-  // Drawer state
+  // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerProjectId, setDrawerProjectId] = useState<string>("");
   const [drawerMembers, setDrawerMembers] = useState<DrawerMember[]>([]);
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [drawerMsg, setDrawerMsg] = useState<string>("");
 
-  // Manage members in drawer (Admin only)
-  const [orgPeople, setOrgPeople] = useState<Array<{ id: string; full_name: string | null; role: string | null }>>([]);
+  // Admin member management inside drawer
+  const [orgPeople, setOrgPeople] = useState<Array<{ id: string; full_name: string | null; role: string | null }>>(
+    []
+  );
   const [memberPickId, setMemberPickId] = useState<string>("");
   const [memberActionBusy, setMemberActionBusy] = useState(false);
 
   const isAdmin = profile?.role === "admin";
   const isManagerOrAdmin = profile?.role === "admin" || profile?.role === "manager";
 
-  function tag(text: string, kind?: "ok" | "warn" | "muted") {
+  function tag(text: string, kind?: "ok" | "warn") {
     const cls = kind === "ok" ? "tag tagOk" : kind === "warn" ? "tag tagWarn" : "tag";
     return <span className={cls}>{text}</span>;
   }
@@ -126,7 +127,7 @@ export default function ProjectsClient() {
       }
       setProjects((data || []) as Project[]);
     } else {
-      // Contractor: only projects they're assigned to
+      // contractor: only assigned projects
       const { data, error } = await supabase
         .from("project_members")
         .select("project_id, projects:project_id (id, name, is_active, org_id, week_start)")
@@ -145,6 +146,7 @@ export default function ProjectsClient() {
     }
   }
 
+  // Initial load
   useEffect(() => {
     if (loading) return;
 
@@ -162,7 +164,7 @@ export default function ProjectsClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, userId, profile?.id]);
 
-  // Load org people (Admin-only) for drawer member management
+  // Load org people for drawer (Admin only)
   useEffect(() => {
     if (!profile) return;
     if (!isAdmin) return;
@@ -190,7 +192,7 @@ export default function ProjectsClient() {
     };
   }, [profile?.org_id, isAdmin]);
 
-  // Load user being managed + membership map (Admin-only)
+  // Load user being managed + membership map (Admin only)
   useEffect(() => {
     if (loading) return;
     if (!profile) return;
@@ -243,9 +245,7 @@ export default function ProjectsClient() {
       }
 
       const map: Record<string, MemberRow> = {};
-      for (const r of (mem as any) ?? []) {
-        map[r.project_id] = r;
-      }
+      for (const r of (mem as any) ?? []) map[r.project_id] = r;
       setMemberMap(map);
     })();
 
@@ -255,7 +255,11 @@ export default function ProjectsClient() {
   }, [loading, profile?.org_id, manageUserId, isAdmin]);
 
   const assignedProjectIds = useMemo(() => {
-    return new Set(Object.entries(memberMap).filter(([, v]) => v.is_active).map(([k]) => k));
+    return new Set(
+      Object.entries(memberMap)
+        .filter(([, v]) => v.is_active)
+        .map(([k]) => k)
+    );
   }, [memberMap]);
 
   const filteredProjects = useMemo(() => {
@@ -264,8 +268,7 @@ export default function ProjectsClient() {
       if (activeFilter === "active" && !p.is_active) return false;
       if (activeFilter === "inactive" && p.is_active) return false;
       if (!query) return true;
-      const hay = `${p.name} ${p.id}`.toLowerCase();
-      return hay.includes(query);
+      return `${p.name} ${p.id}`.toLowerCase().includes(query);
     });
   }, [projects, q, activeFilter]);
 
@@ -292,11 +295,7 @@ export default function ProjectsClient() {
       const existing = memberMap[projectId];
 
       if (existing) {
-        const { error } = await supabase
-          .from("project_members")
-          .update({ is_active: nextAssigned })
-          .eq("id", existing.id);
-
+        const { error } = await supabase.from("project_members").update({ is_active: nextAssigned }).eq("id", existing.id);
         if (error) {
           setFetchErr(error.message);
           return;
@@ -307,7 +306,6 @@ export default function ProjectsClient() {
           [projectId]: { ...existing, is_active: nextAssigned },
         }));
       } else {
-        // Your schema has both profile_id + user_id in some flows; keep both set.
         const payload: any = {
           org_id: profile.org_id,
           project_id: projectId,
@@ -420,8 +418,14 @@ export default function ProjectsClient() {
     }
   }
 
+  const drawerProject = useMemo(() => {
+    if (!drawerProjectId) return null;
+    return projects.find((p) => p.id === drawerProjectId) || null;
+  }, [drawerProjectId, projects]);
+
   async function openDrawer(projectId: string) {
     if (!profile) return;
+
     setDrawerOpen(true);
     setDrawerProjectId(projectId);
     setDrawerMembers([]);
@@ -463,11 +467,6 @@ export default function ProjectsClient() {
     setMemberPickId("");
   }
 
-  const drawerProject = useMemo(() => {
-    if (!drawerProjectId) return null;
-    return projects.find((p) => p.id === drawerProjectId) || null;
-  }, [drawerProjectId, projects]);
-
   const drawerMemberIds = useMemo(() => new Set(drawerMembers.map((m) => m.profile_id)), [drawerMembers]);
 
   const availablePeopleToAdd = useMemo(() => {
@@ -485,7 +484,6 @@ export default function ProjectsClient() {
     setDrawerMsg("");
 
     try {
-      // Check if a row exists (active or inactive)
       const { data: existing, error: exErr } = await supabase
         .from("project_members")
         .select("id")
@@ -500,11 +498,7 @@ export default function ProjectsClient() {
       }
 
       if (existing?.id) {
-        const { error } = await supabase
-          .from("project_members")
-          .update({ is_active: true })
-          .eq("id", existing.id);
-
+        const { error } = await supabase.from("project_members").update({ is_active: true }).eq("id", existing.id);
         if (error) {
           setDrawerMsg(error.message);
           return;
@@ -560,15 +554,14 @@ export default function ProjectsClient() {
   }
 
   function onProjectRowClick(projectId: string) {
-    // ✅ “Select” is now just clicking the row
+    // ✅ “Select” is now clicking the row
     setProjectInUrl(projectId);
 
     // ✅ Admin: open drawer on click
-    if (isAdmin) {
-      openDrawer(projectId);
-    }
+    if (isAdmin) openDrawer(projectId);
   }
 
+  // ---- AppShell early returns (must include children!) ----
   if (loading) {
     return (
       <AppShell title="Projects" subtitle="Loading…">
@@ -611,7 +604,7 @@ export default function ProjectsClient() {
   );
 
   return (
-    <AppShell title="Projects" subtitle={subtitle} headerRight={headerRight}>
+    <AppShell title="Projects" subtitle={subtitle} right={headerRight}>
       {fetchErr ? (
         <div className="alert alertWarn">
           <b>Notice</b>
@@ -628,6 +621,7 @@ export default function ProjectsClient() {
               <div className="prLabel">Project name</div>
               <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g., Store remodel" />
             </div>
+
             <div>
               <div className="prLabel">Week start</div>
               <select value={newWeekStart} onChange={(e) => setNewWeekStart(e.target.value as WeekStart)}>
@@ -635,6 +629,7 @@ export default function ProjectsClient() {
                 <option value="monday">Monday</option>
               </select>
             </div>
+
             <div className="prCreateBtnWrap">
               <button className="btnPrimary" disabled={createBusy} onClick={createProject}>
                 {createBusy ? "Creating…" : "Create"}
@@ -665,7 +660,7 @@ export default function ProjectsClient() {
 
           <div className="prFiltersRight">
             {manageUser ? tag("Assignment mode", "ok") : null}
-            {selectedProjectId ? tag("Selected: " + selectedProjectId.slice(0, 8) + "…") : tag("No project selected", "warn")}
+            {selectedProjectId ? tag("Selected", "ok") : tag("No project selected", "warn")}
           </div>
         </div>
       </div>
@@ -689,8 +684,7 @@ export default function ProjectsClient() {
                 <span className="prDot" />
                 <div>
                   <div className="prRowTitle">
-                    {p.name}{" "}
-                    {p.is_active ? tag("Active", "ok") : tag("Inactive", "warn")}{" "}
+                    {p.name} {p.is_active ? tag("Active", "ok") : tag("Inactive", "warn")}{" "}
                     {selected ? tag("Selected", "ok") : null}
                   </div>
                   <div className="prRowMeta muted">
@@ -710,15 +704,16 @@ export default function ProjectsClient() {
                 </div>
               </div>
 
-              <div className="prRowActions">
+              <div
+                className="prRowActions"
+                onClick={(e) => {
+                  // prevent row click when using controls
+                  e.stopPropagation();
+                }}
+              >
                 {/* Admin-only assignment UI when /projects?user=... */}
                 {manageUser && isAdmin ? (
-                  <div
-                    className="prInline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                  >
+                  <div className="prInline">
                     <span className="prInlineLabel">{assigned ? "Assigned" : "Not assigned"}</span>
                     <input
                       type="checkbox"
@@ -731,14 +726,9 @@ export default function ProjectsClient() {
                   </div>
                 ) : null}
 
-                {/* Admin-only quick controls */}
+                {/* Admin-only project controls */}
                 {isAdmin ? (
-                  <div
-                    className="prInline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                  >
+                  <div className="prInline">
                     <select
                       value={(p.week_start || "sunday") as WeekStart}
                       disabled={savingWeekStartId === p.id}
@@ -814,7 +804,7 @@ export default function ProjectsClient() {
                       <div>
                         <div className="prMemberName">{m.full_name || "(no name)"}</div>
                         <div className="prMemberId muted">
-                          {m.role ? m.role : "user"} • <span className="mono">{m.profile_id}</span>
+                          {m.role || "user"} • <span className="mono">{m.profile_id}</span>
                         </div>
                       </div>
 
@@ -849,26 +839,20 @@ export default function ProjectsClient() {
                       </select>
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                      <button
-                        className="btnPrimary"
-                        disabled={!memberPickId || memberActionBusy}
-                        onClick={addDrawerMember}
-                      >
+                      <button className="btnPrimary" disabled={!memberPickId || memberActionBusy} onClick={addDrawerMember}>
                         {memberActionBusy ? "Saving…" : "Add"}
                       </button>
                     </div>
                   </div>
 
                   <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                    Tip: use “Assignment mode” from People → Manage projects for bulk access.
+                    Tip: People → “Manage projects” enables bulk assignment mode.
                   </div>
                 </div>
               ) : null}
             </div>
 
-            <div className="prDrawerFooter muted">
-              Small business tip: keep projects active/inactive instead of deleting for clean reporting.
-            </div>
+            <div className="prDrawerFooter muted">Keep projects active/inactive instead of deleting for cleaner history.</div>
           </div>
         </div>
       ) : null}
