@@ -1,177 +1,157 @@
-// src/app/settings/appearance/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import RequireOnboarding from "../../../components/auth/RequireOnboarding";
 import AppShell from "../../../components/layout/AppShell";
 import { useProfile } from "../../../lib/useProfile";
 import { supabase } from "../../../lib/supabaseBrowser";
-import type { ThemePrefs, Density } from "../../../components/theme/ThemeProvider";
 
-function safeParse(json: string | null) {
-  if (!json) return null;
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
+// Keep types narrow so UI stays consistent.
+type Accent = "blue" | "indigo" | "emerald" | "rose" | "slate";
+type Density = "comfortable" | "compact";
+type Radius = "md" | "lg" | "xl";
+
+type UiPrefs = {
+  accent: Accent;
+  density: Density;
+  radius: Radius;
+};
+
+const DEFAULT_PREFS: UiPrefs = {
+  accent: "blue",
+  density: "comfortable",
+  radius: "lg",
+};
+
+function isAccent(v: unknown): v is Accent {
+  return v === "blue" || v === "indigo" || v === "emerald" || v === "rose" || v === "slate";
+}
+function isDensity(v: unknown): v is Density {
+  return v === "comfortable" || v === "compact";
+}
+function isRadius(v: unknown): v is Radius {
+  return v === "md" || v === "lg" || v === "xl";
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
+// Safely read ui_prefs from profile (could be null / stringly-typed JSON)
+function readPrefs(raw: any): UiPrefs {
+  const base: UiPrefs = { ...DEFAULT_PREFS };
+  const p = raw?.ui_prefs;
+
+  if (!p || typeof p !== "object") return base;
+
+  if (isAccent(p.accent)) base.accent = p.accent;
+  if (isDensity(p.density)) base.density = p.density;
+  if (isRadius(p.radius)) base.radius = p.radius;
+
+  return base;
 }
 
 export default function AppearanceSettingsPage() {
-  const router = useRouter();
-  const { loading, userId, profile } = useProfile();
+  const { profile, refresh } = useProfile() as any;
   const profileAny = profile as any;
 
-  const initialPrefs = useMemo(() => {
-    const fromProfile = (profileAny?.ui_prefs as ThemePrefs | undefined) || null;
-    const fromLocal = safeParse(localStorage.getItem("ts_theme_prefs")) as ThemePrefs | null;
+  const initialPrefs = useMemo(() => readPrefs(profileAny), [profileAny?.id, profileAny?.ui_prefs]);
 
-    const merged = {
-      accent: fromProfile?.accent || fromLocal?.accent || "#2563eb",
-      radius: clamp(Number(fromProfile?.radius ?? fromLocal?.radius ?? 12), 6, 20),
-      density: ((fromProfile?.density || fromLocal?.density || "comfortable") as Density) === "compact" ? "compact" : "comfortable",
-    };
-
-    return merged;
-  }, [profileAny?.id]);
-
-  const [accent, setAccent] = useState("#2563eb");
-  const [radius, setRadius] = useState(12);
-  const [density, setDensity] = useState<Density>("comfortable");
+  const [accent, setAccent] = useState<Accent>(DEFAULT_PREFS.accent);
+  const [density, setDensity] = useState<Density>(DEFAULT_PREFS.density);
+  const [radius, setRadius] = useState<Radius>(DEFAULT_PREFS.radius);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
 
   useEffect(() => {
+    // This is the line that previously failed — now validated and typed.
     setAccent(initialPrefs.accent);
     setRadius(initialPrefs.radius);
     setDensity(initialPrefs.density);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileAny?.id]);
 
+  // Optional: Apply visual effects immediately (CSS hooks)
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+    document.documentElement.dataset.density = density;
+    document.documentElement.dataset.radius = radius;
+
+    // local draft persistence
+    try {
+      localStorage.setItem("ts_theme_prefs", JSON.stringify({ accent, density, radius }));
+    } catch {}
+  }, [accent, density, radius]);
+
   async function save() {
-    const next: ThemePrefs = {
-      accent,
-      radius,
-      density,
-    };
-
+    if (!profileAny?.id) return;
     setSaving(true);
-    setMsg("");
 
-    // 1) Apply immediately (ThemeProvider reads localStorage + sets CSS vars)
-    localStorage.setItem("ts_theme_prefs", JSON.stringify(next));
+    const ui_prefs: UiPrefs = { accent, density, radius };
 
-    // 2) Persist to profile (so it follows the user across devices)
-    if (userId) {
-      const { error } = await supabase.from("profiles").update({ ui_prefs: next }).eq("id", userId);
-      if (error) {
-        setSaving(false);
-        setMsg(error.message);
-        return;
-      }
-    }
+    const { error } = await supabase
+      .from("profiles")
+      .update({ ui_prefs })
+      .eq("id", profileAny.id);
 
     setSaving(false);
 
-    // Reload to ensure ThemeProvider re-applies everywhere consistently
-    window.location.reload();
-  }
-
-  async function reset() {
-    localStorage.removeItem("ts_theme_prefs");
-
-    setAccent("#2563eb");
-    setRadius(12);
-    setDensity("comfortable");
-
-    // Optional: also reset server-stored prefs
-    if (userId) {
-      await supabase.from("profiles").update({ ui_prefs: null }).eq("id", userId);
+    if (error) {
+      alert(error.message);
+      return;
     }
 
-    window.location.reload();
-  }
-
-  if (loading) {
-    return (
-      <RequireOnboarding>
-        <AppShell title="Appearance" subtitle="Theme settings for your account">
-          <div className="card cardPad">Loading…</div>
-        </AppShell>
-      </RequireOnboarding>
-    );
+    await refresh?.();
+    alert("Saved.");
   }
 
   return (
     <RequireOnboarding>
-      <AppShell title="Appearance" subtitle="Theme settings for your account">
-        {msg ? (
-          <div className="alert alertInfo">
-            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{msg}</pre>
+      <AppShell title="Appearance" subtitle="Customize how Timesheet looks for you">
+        <div className="card cardPad" style={{ maxWidth: 720 }}>
+          <div className="muted" style={{ marginBottom: 10 }}>
+            These settings are per-user. (Admins can still enforce org policies separately later.)
           </div>
-        ) : null}
 
-        <div className="card cardPad" style={{ maxWidth: 760, marginTop: 14 }}>
-          <div className="tsGrid2">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <div className="muted" style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-                Accent color
+                Accent
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input
-                  type="color"
-                  value={accent}
-                  onChange={(e) => setAccent(e.target.value)}
-                  style={{ width: 56, height: 40, padding: 0, border: "none", background: "transparent" }}
-                  aria-label="Accent color"
-                />
-                <input value={accent} onChange={(e) => setAccent(e.target.value)} placeholder="#2563eb" />
-              </div>
+              <select value={accent} onChange={(e) => setAccent(e.target.value as Accent)}>
+                <option value="blue">Blue</option>
+                <option value="indigo">Indigo</option>
+                <option value="emerald">Emerald</option>
+                <option value="rose">Rose</option>
+                <option value="slate">Slate</option>
+              </select>
             </div>
 
             <div>
               <div className="muted" style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-                Corner radius ({radius}px)
+                Density
               </div>
-              <input
-                type="range"
-                min={6}
-                max={20}
-                value={radius}
-                onChange={(e) => setRadius(Number(e.target.value))}
-              />
+              <select value={density} onChange={(e) => setDensity(e.target.value as Density)}>
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+              </select>
             </div>
           </div>
 
           <div style={{ marginTop: 12 }}>
             <div className="muted" style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-              Density
+              Corner radius
             </div>
-            <select value={density} onChange={(e) => setDensity(e.target.value as Density)}>
-              <option value="comfortable">Comfortable</option>
-              <option value="compact">Compact</option>
+            <select value={radius} onChange={(e) => setRadius(e.target.value as Radius)}>
+              <option value="md">Medium</option>
+              <option value="lg">Large</option>
+              <option value="xl">Extra Large</option>
             </select>
           </div>
 
           <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
-            <button className="btnPrimary" onClick={save} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button className="pill" onClick={reset} disabled={saving}>
-              Reset
-            </button>
-            <button className="pill" onClick={() => router.push("/settings")}>
-              Back
+            <button className="btn btnPrimary" onClick={save} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
             </button>
           </div>
 
-          <div className="muted" style={{ marginTop: 10, fontSize: 13 }}>
-            Your theme is stored per-user (local + profile). If saving fails for contractors, apply Step 5 DB fix.
+          <div className="muted" style={{ marginTop: 12, fontSize: 12 }}>
+            Tip: if saving fails for contractors, update your DB trigger to allow <code>ui_prefs</code> updates.
           </div>
         </div>
       </AppShell>
