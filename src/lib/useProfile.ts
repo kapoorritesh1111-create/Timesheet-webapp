@@ -1,74 +1,69 @@
 // src/lib/useProfile.ts
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabaseBrowser";
-
-export type Role = "admin" | "manager" | "contractor";
 
 export type Profile = {
   id: string;
-  org_id: string | null;
-  role: Role;
-  full_name: string | null;
+  org_id: string;
+  full_name: string;
+  role: "admin" | "manager" | "contractor";
   hourly_rate: number | null;
-  is_active: boolean | null;
+  is_active: boolean;
   manager_id: string | null;
-
-  phone: string | null;
-  address: string | null;
-  avatar_url: string | null;
-
-  // ✅ important for Step 5
-  ui_prefs: any | null;
-
   onboarding_completed_at: string | null;
+  phone?: string | null;
+  address?: string | null;
+  avatar_url?: string | null;
+  ui_prefs?: any; // jsonb
 };
 
-async function fetchMyProfile(uid: string) {
-  return await supabase
-    .from("profiles")
-    .select(
-      [
-        "id",
-        "org_id",
-        "role",
-        "full_name",
-        "hourly_rate",
-        "is_active",
-        "manager_id",
-        "phone",
-        "address",
-        "avatar_url",
-        "ui_prefs",
-        "onboarding_completed_at",
-      ].join(", ")
-    )
-    .eq("id", uid)
-    .maybeSingle();
-}
+type UseProfileResult = {
+  userId: string | null;
+  profile: Profile | null;
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+};
 
-export function useProfile() {
-  const [loading, setLoading] = useState(true);
+export function useProfile(): UseProfileResult {
   const [userId, setUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const hydrate = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  // Prevent overlapping hydrations (auth events can fire more than you expect)
+  const hydratingRef = useRef(false);
+  const mountedRef = useRef(false);
+
+  async function fetchProfile(uid: string) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "id, org_id, full_name, role, hourly_rate, is_active, manager_id, onboarding_completed_at, phone, address, avatar_url, ui_prefs"
+      )
+      .eq("id", uid)
+      .maybeSingle();
+
+    if (error) throw error;
+    setProfile((data as Profile) ?? null);
+  }
+
+  async function hydrate(opts?: { showLoading?: boolean }) {
+    if (hydratingRef.current) return;
+    hydratingRef.current = true;
+
+    if (opts?.showLoading) setLoading(true);
+    setError(null);
 
     try {
-      const { data: sessionData, error: sessErr } = await supabase.auth.getSession();
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
 
-      if (sessErr) {
-        setUserId(null);
-        setProfile(null);
-        setError(`Auth session error: ${sessErr.message}`);
-        return;
-      }
+      const session = data?.session ?? null;
+      const uid = session?.user?.id ?? null;
 
-      const uid = sessionData.session?.user?.id ?? null;
       setUserId(uid);
 
       if (!uid) {
@@ -76,55 +71,45 @@ export function useProfile() {
         return;
       }
 
-      const { data: prof, error: profErr } = await fetchMyProfile(uid);
-
-      if (profErr) {
-        setProfile(null);
-        setError(`Profile query error: ${profErr.message}`);
-        return;
-      }
-
-      if (!prof) {
-        setProfile(null);
-        setError(
-          "Profile missing: no row found in `profiles` for this user. An admin must create it (or enable auto-create trigger)."
-        );
-        return;
-      }
-
-      setProfile(prof as any);
+      await fetchProfile(uid);
     } catch (e: any) {
+      setError(e?.message ?? "Failed to load profile");
       setUserId(null);
       setProfile(null);
-      setError(e?.message ? String(e.message) : "Unexpected profile hydration error.");
     } finally {
-      // ✅ critical: never leave the app stuck blank
       setLoading(false);
+      hydratingRef.current = false;
     }
-  }, []);
+  }
 
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
 
-    (async () => {
-      if (cancelled) return;
-      await hydrate();
-    })();
+    // Initial hydrate: show loading skeleton
+    hydrate({ showLoading: true });
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async () => {
-      if (cancelled) return;
-      await hydrate();
+    // Auth events: do NOT flip loading=true (prevents “stuck loading” / flicker loops)
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (!mountedRef.current) return;
+
+      // Only re-hydrate on meaningful auth events
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        hydrate({ showLoading: false });
+      }
     });
 
     return () => {
-      cancelled = true;
-      sub?.subscription?.unsubscribe();
+      mountedRef.current = false;
+      data?.subscription?.unsubscribe();
     };
-  }, [hydrate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const refresh = useCallback(async () => {
-    await hydrate();
-  }, [hydrate]);
-
-  return { loading, userId, profile, error, refresh };
+  return {
+    userId,
+    profile,
+    loading,
+    error,
+    refresh: async () => hydrate({ showLoading: false }),
+  };
 }
