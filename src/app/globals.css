@@ -5,42 +5,63 @@
     html[data-density="..."]
     html[data-radius="..."]
 */
-
 :root {
-  /* Base palette */
   --bg: #f6f7fb;
   --surface: #ffffff;
   --text: #0f172a;
   --muted: rgba(15, 23, 42, 0.65);
   --border: rgba(15, 23, 42, 0.10);
-
-  /* Shadows */
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.07);
 
-  /* Theme tokens (default accent = blue) */
+  /* These are the theme-driven tokens */
   --primary: #2563eb;
   --primary-600: #1d4ed8;
-  --primary-soft: rgba(37, 99, 235, 0.10);
-  --primary-ring: rgba(37, 99, 235, 0.12);
-
-  /* Semantic */
   --danger: #dc2626;
 
-  /* Radius token (default) */
+  /* Radius is theme-driven */
   --radius: 16px;
 
-  /* Density tokens (default comfortable) */
-  --space-1: 6px;
-  --space-2: 10px;
-  --space-3: 14px;
-  --space-4: 18px;
-
-  /* Inputs/buttons */
-  --control-radius: 12px;
-  --control-pad-y: 10px;
-  --control-pad-x: 10px;
+  /* Density hooks (optional but ready) */
+  --pad: 14px;
+  --gap: 12px;
 }
+
+/* Accent → primary mapping */
+:root[data-accent="blue"] {
+  --primary: #2563eb;
+  --primary-600: #1d4ed8;
+}
+
+:root[data-accent="indigo"] {
+  --primary: #4f46e5;
+  --primary-600: #4338ca;
+}
+
+:root[data-accent="emerald"] {
+  --primary: #059669;
+  --primary-600: #047857;
+}
+
+:root[data-accent="rose"] {
+  --primary: #e11d48;
+  --primary-600: #be123c;
+}
+
+:root[data-accent="slate"] {
+  --primary: #334155;
+  --primary-600: #1f2937;
+}
+
+/* Radius mapping */
+:root[data-radius="md"] { --radius: 12px; }
+:root[data-radius="lg"] { --radius: 16px; }
+:root[data-radius="xl"] { --radius: 20px; }
+
+/* Density mapping (lightweight) */
+:root[data-density="comfortable"] { --pad: 14px; --gap: 12px; }
+:root[data-density="compact"] { --pad: 10px; --gap: 10px; }
+
 
 /* -------- Theme via data-* on <html> -------- */
 
