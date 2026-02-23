@@ -33,6 +33,7 @@ export default function TopNav() {
     { href: "/dashboard", label: "Dashboard", match: "exact" },
     { href: "/timesheet", label: "Timesheet", match: "exact" },
     { href: "/approvals", label: "Approvals", show: isManagerOrAdmin, match: "exact" },
+    { href: "/settings", label: "Settings", show: true, match: "prefix" },
 
     // reporting (nested routes should stay active)
     { href: "/reports/payroll", label: "Payroll", show: true, match: "prefix" },
