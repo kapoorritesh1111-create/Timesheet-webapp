@@ -570,11 +570,28 @@ export default function ProjectsClient() {
   }
 
   if (loading) {
-    return <AppShell title="Projects" subtitle="Loading…" />;
+    return (
+      <AppShell title="Projects" subtitle="Loading…">
+        <div className="card cardPad prShell">
+          <div className="muted">Loading…</div>
+        </div>
+      </AppShell>
+    );
   }
 
   if (!userId) {
-    return <AppShell title="Projects" subtitle="Please log in." />;
+    return (
+      <AppShell title="Projects" subtitle="Please log in.">
+        <div className="card cardPad prShell">
+          <div className="muted" style={{ marginBottom: 10 }}>
+            You need to log in to view projects.
+          </div>
+          <button className="btnPrimary" onClick={() => router.push("/login")}>
+            Go to Login
+          </button>
+        </div>
+      </AppShell>
+    );
   }
 
   const subtitle = manageUser
