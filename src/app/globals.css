@@ -1134,3 +1134,14 @@ button:hover { box-shadow: var(--shadow-sm); }
 }
 .grid2 { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 900px){ .grid2{ grid-template-columns: 1fr; } }
+/* --- Settings layout helpers --- */
+.tsGrid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .tsGrid2 {
+    grid-template-columns: 1fr;
+  }
+}
