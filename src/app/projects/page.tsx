@@ -1,4 +1,3 @@
-// src/app/projects/page.tsx
 "use client";
 
 import { Suspense } from "react";
@@ -10,11 +9,7 @@ function ProjectsLoading() {
   return (
     <AppShell title="Projects" subtitle="Create projects and manage access">
       <div className="card cardPad prShell">
-        <div className="prSkel">
-          <div className="skeleton prSkelLine" />
-          <div className="skeleton prSkelBar" />
-          <div className="skeleton prSkelTable" />
-        </div>
+        <div className="muted">Loading…</div>
       </div>
     </AppShell>
   );
