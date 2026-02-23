@@ -1,110 +1,125 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useProfile } from "../../lib/useProfile";
-import { supabase } from "../../lib/supabaseBrowser";
 
-export type Density = "comfortable" | "compact";
+/**
+ * This ThemeProvider is the single source of truth for applying per-user UI prefs.
+ * It reads from:
+ *  1) profile.ui_prefs (DB)  [preferred]
+ *  2) localStorage fallback  (for instant UX + safety)
+ *
+ * Then it applies:
+ *  - documentElement.dataset.accent / density / radius
+ * which your globals.css maps into CSS vars.
+ */
 
-export type ThemePrefs = {
-  accent?: string;   // e.g. "#2563eb"
-  radius?: number;   // px
-  density?: Density; // comfortable/compact
+type Accent = "blue" | "indigo" | "emerald" | "rose" | "slate";
+type Density = "comfortable" | "compact";
+type Radius = "md" | "lg" | "xl";
+
+type UiPrefs = {
+  accent: Accent;
+  density: Density;
+  radius: Radius;
 };
 
-const DEFAULT_PREFS: Required<ThemePrefs> = {
-  accent: "#2563eb",
-  radius: 12,
+const DEFAULT_PREFS: UiPrefs = {
+  accent: "blue",
   density: "comfortable",
+  radius: "lg",
 };
 
-function safeParse(json: string | null) {
-  if (!json) return null;
+function safeJsonParse(input: unknown): any | null {
+  if (typeof input !== "string") return null;
   try {
-    return JSON.parse(json);
+    return JSON.parse(input);
   } catch {
     return null;
   }
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
+function isAccent(v: unknown): v is Accent {
+  return v === "blue" || v === "indigo" || v === "emerald" || v === "rose" || v === "slate";
+}
+function isDensity(v: unknown): v is Density {
+  return v === "comfortable" || v === "compact";
+}
+function isRadius(v: unknown): v is Radius {
+  return v === "md" || v === "lg" || v === "xl";
+}
+
+function normalizePrefs(rawUiPrefs: any): UiPrefs {
+  const base: UiPrefs = { ...DEFAULT_PREFS };
+
+  // ui_prefs might be:
+  // - null
+  // - an object (jsonb)
+  // - a stringified json (older / inconsistent writes)
+  const p =
+    rawUiPrefs && typeof rawUiPrefs === "object"
+      ? rawUiPrefs
+      : safeJsonParse(rawUiPrefs) && typeof safeJsonParse(rawUiPrefs) === "object"
+      ? safeJsonParse(rawUiPrefs)
+      : null;
+
+  if (!p) return base;
+
+  if (isAccent(p.accent)) base.accent = p.accent;
+  if (isDensity(p.density)) base.density = p.density;
+  if (isRadius(p.radius)) base.radius = p.radius;
+
+  return base;
+}
+
+function readLocalPrefs(): UiPrefs | null {
+  try {
+    // Support both keys (old + new) so you don't brick existing users
+    const raw =
+      localStorage.getItem("ts_ui_prefs_v1") || localStorage.getItem("ts_theme_prefs") || null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return normalizePrefs(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalPrefs(prefs: UiPrefs) {
+  try {
+    localStorage.setItem("ts_ui_prefs_v1", JSON.stringify(prefs));
+  } catch {}
 }
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useProfile();
-
-  // NOTE: Profile TS type may not include ui_prefs yet; treat as any to avoid build failures.
+  const { profile } = useProfile() as any;
   const profileAny = profile as any;
 
-  const [prefs, setPrefs] = useState<Required<ThemePrefs>>(DEFAULT_PREFS);
+  const prefs = useMemo(() => {
+    // DB prefs win; localStorage is fallback
+    const fromDb = normalizePrefs(profileAny?.ui_prefs);
+    const fromLocal = readLocalPrefs();
 
-  // Load prefs: profile.ui_prefs wins; otherwise localStorage; otherwise default
+    // If DB has never set prefs (still defaults) but local has something, use local
+    // Otherwise prefer DB.
+    const dbLooksDefault =
+      fromDb.accent === DEFAULT_PREFS.accent &&
+      fromDb.density === DEFAULT_PREFS.density &&
+      fromDb.radius === DEFAULT_PREFS.radius;
+
+    return dbLooksDefault && fromLocal ? fromLocal : fromDb;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileAny?.id, profileAny?.ui_prefs]);
+
   useEffect(() => {
-    const fromProfile = (profileAny?.ui_prefs as ThemePrefs | undefined) || null;
-    const fromLocal = safeParse(localStorage.getItem("ts_theme_prefs")) as ThemePrefs | null;
+    // Apply globally (this is what makes refresh persist)
+    document.documentElement.dataset.accent = prefs.accent;
+    document.documentElement.dataset.density = prefs.density;
+    document.documentElement.dataset.radius = prefs.radius;
 
-    const merged: Required<ThemePrefs> = {
-      accent: fromProfile?.accent || fromLocal?.accent || DEFAULT_PREFS.accent,
-      radius: clamp(Number(fromProfile?.radius ?? fromLocal?.radius ?? DEFAULT_PREFS.radius), 6, 20),
-      density:
-        ((fromProfile?.density || fromLocal?.density || DEFAULT_PREFS.density) as any) === "compact"
-          ? "compact"
-          : "comfortable",
-    };
-
-    setPrefs(merged);
-  }, [profileAny?.id]);
-
-  // Apply CSS variables
-  useEffect(() => {
-    const root = document.documentElement;
-
-    root.style.setProperty("--accent", prefs.accent);
-    root.style.setProperty("--radius", `${prefs.radius}px`);
-
-    if (prefs.density === "compact") {
-      root.style.setProperty("--space-1", "6px");
-      root.style.setProperty("--space-2", "10px");
-      root.style.setProperty("--space-3", "14px");
-      root.style.setProperty("--input-h", "36px");
-    } else {
-      root.style.setProperty("--space-1", "8px");
-      root.style.setProperty("--space-2", "12px");
-      root.style.setProperty("--space-3", "16px");
-      root.style.setProperty("--input-h", "40px");
-    }
-  }, [prefs]);
-
-  const api = useMemo(() => {
-    return {
-      prefs,
-      async save(next: ThemePrefs) {
-        const merged: Required<ThemePrefs> = {
-          accent: next.accent || prefs.accent,
-          radius: clamp(Number(next.radius ?? prefs.radius), 6, 20),
-          density: next.density === "compact" ? "compact" : "comfortable",
-        };
-
-        // Save locally immediately
-        localStorage.setItem("ts_theme_prefs", JSON.stringify(merged));
-        setPrefs(merged);
-
-        // Persist to profile if logged in
-        if (profileAny?.id) {
-          await supabase.from("profiles").update({ ui_prefs: merged }).eq("id", profileAny.id);
-        }
-      },
-      reset() {
-        localStorage.removeItem("ts_theme_prefs");
-        setPrefs(DEFAULT_PREFS);
-      },
-    };
-  }, [prefs, profileAny?.id]);
-
-  // Convenience global handle (optional)
-  // @ts-ignore
-  if (typeof window !== "undefined") window.__TS_THEME__ = api;
+    // Keep localStorage aligned (helps before profile loads)
+    writeLocalPrefs(prefs);
+  }, [prefs.accent, prefs.density, prefs.radius]);
 
   return <>{children}</>;
 }
