@@ -5,6 +5,22 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseBrowser";
 import { useProfile } from "../../lib/useProfile";
 
+// lucide icons
+import {
+  LayoutDashboard,
+  Clock3,
+  CheckCircle2,
+  FolderKanban,
+  Users,
+  BadgeDollarSign,
+  Menu,
+  X,
+  User,
+  Palette,
+  Shield,
+  LogOut,
+} from "lucide-react";
+
 type Props = {
   title?: string;
   subtitle?: string;
@@ -16,8 +32,15 @@ function initials(name?: string) {
   const n = (name || "").trim();
   if (!n) return "U";
   const parts = n.split(/\s+/).slice(0, 2);
-  return parts.map(p => p[0]?.toUpperCase() || "").join("") || "U";
+  return parts.map((p) => p[0]?.toUpperCase() || "").join("") || "U";
 }
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: ReactNode;
+  hideIf?: (role: string) => boolean;
+};
 
 export default function AppShell({ title, subtitle, right, children }: Props) {
   const router = useRouter();
@@ -33,16 +56,31 @@ export default function AppShell({ title, subtitle, right, children }: Props) {
   const fullName = profile?.full_name || "User";
   const role = profile?.role || "user";
 
-  const navItems = useMemo(() => {
+  const navItems: NavItem[] = useMemo(() => {
     // IMPORTANT: Payroll route fix — use /reports/payroll (not /payroll)
     return [
-      { label: "Home", href: "/dashboard" },
-      { label: "My work", href: "/timesheet" },
-      { label: "Approvals", href: "/approvals", hideIf: (r: string) => r === "contractor" },
-      { label: "Projects", href: "/projects" },
-      { label: "People", href: "/profiles", hideIf: (r: string) => r === "contractor" },
-      { label: "Payroll", href: "/reports/payroll", hideIf: (r: string) => r === "contractor" },
-    ].filter(i => !i.hideIf?.(role));
+      { label: "Home", href: "/dashboard", icon: <LayoutDashboard size={16} /> },
+      { label: "My work", href: "/timesheet", icon: <Clock3 size={16} /> },
+      {
+        label: "Approvals",
+        href: "/approvals",
+        icon: <CheckCircle2 size={16} />,
+        hideIf: (r: string) => r === "contractor",
+      },
+      { label: "Projects", href: "/projects", icon: <FolderKanban size={16} /> },
+      {
+        label: "People",
+        href: "/profiles",
+        icon: <Users size={16} />,
+        hideIf: (r: string) => r === "contractor",
+      },
+      {
+        label: "Payroll",
+        href: "/reports/payroll",
+        icon: <BadgeDollarSign size={16} />,
+        hideIf: (r: string) => r === "contractor",
+      },
+    ].filter((i) => !i.hideIf?.(role));
   }, [role]);
 
   function isActive(href: string) {
@@ -53,6 +91,7 @@ export default function AppShell({ title, subtitle, right, children }: Props) {
 
   function go(href: string) {
     setMobileOpen(false);
+    setMenuOpen(false);
     router.push(href);
   }
 
@@ -88,12 +127,24 @@ export default function AppShell({ title, subtitle, right, children }: Props) {
 
         <div className="mwTopRight" ref={menuRef}>
           {/* Mobile menu button */}
-          <button className="mwHamburger" onClick={() => setMobileOpen(true)} aria-label="Open menu">
-            ☰
+          <button
+            className="mwHamburger"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+            }}
+          >
+            <Menu size={18} />
           </button>
 
           {/* Profile */}
-          <button className="mwProfileBtn" onClick={() => setMenuOpen(v => !v)}>
+          <button className="mwProfileBtn" onClick={() => setMenuOpen((v) => !v)}>
             <span className="mwAvatar">{initials(fullName)}</span>
             <span className="mwProfileMeta">
               <span className="mwProfileName">{fullName}</span>
@@ -108,36 +159,51 @@ export default function AppShell({ title, subtitle, right, children }: Props) {
                 <div className="mwMenuTitle">Account</div>
 
                 <div className="mwMenuItem" onClick={() => go("/settings/profile")}>
-                  My profile
+                  <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <User size={16} />
+                    My profile
+                  </span>
                 </div>
 
                 <div className="mwMenuItem" onClick={() => go("/settings/appearance")}>
-                  Change theme
+                  <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <Palette size={16} />
+                    Change theme
+                  </span>
                 </div>
 
                 {isAdmin && (
                   <div className="mwMenuItem" onClick={() => go("/admin")}>
-                    Admin
+                    <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                      <Shield size={16} />
+                      Admin
+                    </span>
                   </div>
                 )}
 
                 <div className="mwMenuDivider" />
 
                 <div className="mwMenuTitle">Navigate</div>
-                {navItems.map(i => (
+                {navItems.map((i) => (
                   <div
                     key={i.href}
                     className={`mwMenuItem ${isActive(i.href) ? "mwMenuItemActive" : ""}`}
                     onClick={() => go(i.href)}
                   >
-                    {i.label}
+                    <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                      {i.icon}
+                      {i.label}
+                    </span>
                   </div>
                 ))}
 
                 <div className="mwMenuDivider" />
 
                 <div className="mwMenuItem mwDanger" onClick={signOut}>
-                  Log out
+                  <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <LogOut size={16} />
+                    Log out
+                  </span>
                 </div>
               </div>
             </div>
@@ -148,15 +214,21 @@ export default function AppShell({ title, subtitle, right, children }: Props) {
       {/* Desktop sidebar */}
       <aside className="mwSidebar">
         <div className="mwSideSection">
-          {navItems.map(i => (
+          {navItems.map((i) => (
             <div
               key={i.href}
               className={`mwSideItem ${isActive(i.href) ? "mwSideItemActive" : ""}`}
               onClick={() => go(i.href)}
               role="button"
               tabIndex={0}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
             >
-              {i.label}
+              <span style={{ display: "inline-flex", alignItems: "center" }}>{i.icon}</span>
+              <span>{i.label}</span>
             </div>
           ))}
         </div>
@@ -171,32 +243,67 @@ export default function AppShell({ title, subtitle, right, children }: Props) {
                 <div className="mwBrandDot" />
                 <div className="mwBrandName">Timesheet</div>
               </div>
-              <button onClick={() => setMobileOpen(false)} aria-label="Close menu">
-                ✕
+
+              <button
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close menu"
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40 }}
+              >
+                <X size={18} />
               </button>
             </div>
 
+            <div className="mwMenuTitle">Navigate</div>
             <div className="mwSideSection">
-              {navItems.map(i => (
+              {navItems.map((i) => (
                 <div
                   key={i.href}
                   className={`mwSideItem ${isActive(i.href) ? "mwSideItemActive" : ""}`}
                   onClick={() => go(i.href)}
                   role="button"
                   tabIndex={0}
+                  style={{ display: "flex", alignItems: "center", gap: 10 }}
                 >
-                  {i.label}
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>{i.icon}</span>
+                  <span>{i.label}</span>
                 </div>
               ))}
             </div>
 
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 14 }}>
               <div className="mwMenuTitle">Account</div>
               <div className="mwSideSection">
-                <div className="mwSideItem" onClick={() => go("/settings/profile")}>My profile</div>
-                <div className="mwSideItem" onClick={() => go("/settings/appearance")}>Change theme</div>
-                {isAdmin && <div className="mwSideItem" onClick={() => go("/admin")}>Admin</div>}
-                <div className="mwSideItem" onClick={signOut} style={{ color: "var(--danger)" }}>Log out</div>
+                <div className="mwSideItem" onClick={() => go("/settings/profile")} role="button" tabIndex={0}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                    <User size={16} /> My profile
+                  </span>
+                </div>
+
+                <div className="mwSideItem" onClick={() => go("/settings/appearance")} role="button" tabIndex={0}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                    <Palette size={16} /> Change theme
+                  </span>
+                </div>
+
+                {isAdmin && (
+                  <div className="mwSideItem" onClick={() => go("/admin")} role="button" tabIndex={0}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      <Shield size={16} /> Admin
+                    </span>
+                  </div>
+                )}
+
+                <div
+                  className="mwSideItem"
+                  onClick={signOut}
+                  role="button"
+                  tabIndex={0}
+                  style={{ color: "var(--danger)" }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                    <LogOut size={16} /> Log out
+                  </span>
+                </div>
               </div>
             </div>
           </div>
